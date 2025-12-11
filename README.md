@@ -152,25 +152,20 @@ npm run deploy
 ## Architecture
 
 ```
-GitHub Webhook
-      |
-      v
-Cloudflare Worker
-      |
-      +-- Verify webhook signature
-      +-- Check user write permissions
-      +-- Create "working" comment
-      |
-      v
-Cloudflare Sandbox (Container)
-      |
-      +-- Clone repository
-      +-- Start OpenCode server
-      +-- Run AI session with prompt
-      +-- Push changes (if any)
-      |
-      v
-Update GitHub comment with response
+┌─────────┐    ┌──────────────────┐    ┌─────────────────┐    ┌──────────────┐
+│ GitHub  │───▶│ Cloudflare       │───▶│ Cloudflare      │───▶│ OpenCode     │
+│ Webhook │    │ Worker           │    │ Container       │    │ Server       │
+└─────────┘    └──────────────────┘    └─────────────────┘    └──────────────┘
+                     │                        │                      │
+               1. Verify sig            3. Clone repo          5. Model processes
+               2. Create comment        4. Start opencode         prompt & works
+                     │                        │                      on repo
+                     │                        │◀─────────────────────┘
+                     │                   6. Git commit/push
+                     │                      (if changes)
+                     │◀───────────────────────┘
+               7. Update comment
+                  (+ create PR if needed)
 ```
 
 ## License
