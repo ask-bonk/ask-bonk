@@ -1,19 +1,24 @@
-# Base image with Node.js
-FROM node:22-slim
+# Use official Cloudflare sandbox base image
+FROM docker.io/cloudflare/sandbox:0.6.5
 
 # Install system dependencies (rarely change - cached layer)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    curl \
-    ca-certificates \
     python3 \
     python3-pip \
     python3-venv \
     build-essential \
-    openssh-client \
     jq \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
+
+# Add opencode install location to PATH
+ENV PATH="/root/.opencode/bin:${PATH}"
+
+# Install OpenCode CLI
+RUN curl -fsSL https://opencode.ai/install -o /tmp/install-opencode.sh \
+    && bash /tmp/install-opencode.sh \
+    && rm /tmp/install-opencode.sh \
+    && opencode --version
 
 # Install global Node.js tools (cached layer)
 RUN npm install -g \
@@ -28,6 +33,9 @@ RUN git config --global init.defaultBranch main \
 # Create workspace directory
 RUN mkdir -p /home/user/workspace
 WORKDIR /home/user/workspace
+
+# Expose OpenCode server port
+EXPOSE 4096
 
 # Default command
 CMD ["bash"]
