@@ -5,31 +5,27 @@
 	"compatibility_date": "2025-12-11",
 	"compatibility_flags": ["nodejs_compat"],
 	"observability": {
-		"enabled": true,
-		"traces": {
-			"enabled": true,
-			"head_sampling_rate": 0.1,
-		},
+		"enabled": true
 	},
 	"containers": [
 		{
 			"class_name": "Sandbox",
 			"image": "./Dockerfile",
-			"instance_type": "standard-2",
-		},
+			"instance_type": "standard"
+		}
 	],
 	"durable_objects": {
 		"bindings": [
 			{
 				"class_name": "Sandbox",
-				"name": "Sandbox",
-			},
-		],
+				"name": "Sandbox"
+			}
+		]
 	},
 	"migrations": [
 		{
 			"new_sqlite_classes": ["Sandbox"],
-			"tag": "v1",
-		},
-	],
+			"tag": "v1"
+		}
+	]
 }
