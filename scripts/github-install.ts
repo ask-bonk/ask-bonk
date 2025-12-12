@@ -147,6 +147,16 @@ function isGhAuthenticated(): boolean {
 	}
 }
 
+// Check if gh has workflow scope
+function hasWorkflowScope(): boolean {
+	try {
+		const result = execSync("gh auth status 2>&1", { encoding: "utf-8" });
+		return result.includes("workflow");
+	} catch {
+		return false;
+	}
+}
+
 // Set secret using gh CLI
 function setSecret(repo: string, name: string, value: string): boolean {
 	try {
@@ -209,10 +219,13 @@ function createFile(repo: string, path: string, content: string, message: string
 		const base64Content = Buffer.from(content).toString("base64");
 		execSync(
 			`gh api repos/${repo}/contents/${path} -X PUT -f message="${message}" -f content="${base64Content}" -f branch="${branch}"`,
-			{ stdio: "ignore" }
+			{ stdio: "pipe" }
 		);
 		return true;
-	} catch {
+	} catch (error) {
+		if (error instanceof Error && "stderr" in error) {
+			console.error((error as { stderr: Buffer }).stderr?.toString());
+		}
 		return false;
 	}
 }
@@ -241,8 +254,12 @@ function findExistingPR(repo: string, branch: string): string | null {
 	}
 }
 
+// Mention patterns
+const BOT_MENTION = "@ask-bonk";
+const BOT_COMMAND = "/bonk";
+
 // Generate workflow content
-function generateWorkflowContent(botMention = "@ask-bonk", botCommand = "/bonk"): string {
+function generateWorkflowContent(): string {
 	return `name: Bonk
 
 on:
@@ -256,18 +273,27 @@ on:
 jobs:
   bonk:
     if: |
-      (github.event_name == 'issue_comment' && (contains(github.event.comment.body, '${botMention}') || contains(github.event.comment.body, '${botCommand}'))) ||
-      (github.event_name == 'pull_request_review_comment' && (contains(github.event.comment.body, '${botMention}') || contains(github.event.comment.body, '${botCommand}'))) ||
-      (github.event_name == 'pull_request_review' && (contains(github.event.review.body, '${botMention}') || contains(github.event.review.body, '${botCommand}')))
+      (github.event_name == 'issue_comment' && (contains(github.event.comment.body, '${BOT_MENTION}') || contains(github.event.comment.body, '${BOT_COMMAND}'))) ||
+      (github.event_name == 'pull_request_review_comment' && (contains(github.event.comment.body, '${BOT_MENTION}') || contains(github.event.comment.body, '${BOT_COMMAND}'))) ||
+      (github.event_name == 'pull_request_review' && (contains(github.event.review.body, '${BOT_MENTION}') || contains(github.event.review.body, '${BOT_COMMAND}')))
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: write
       issues: write
       pull-requests: write
     steps:
-      - uses: sst/opencode/github@latest
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          anthropic_api_key: \${{ secrets.ANTHROPIC_API_KEY }}
+          fetch-depth: 1
+
+      - name: Run Bonk
+        uses: sst/opencode/github@latest
+        env:
+          ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}
+        with:
+          model: anthropic/claude-sonnet-4-20250514
 `;
 }
 
@@ -309,6 +335,16 @@ async function main() {
 	}
 
 	logSuccess("GitHub CLI is installed and authenticated");
+
+	// Check for workflow scope (required to create files in .github/workflows/)
+	if (!hasWorkflowScope()) {
+		logWarn("GitHub CLI missing 'workflow' scope (required to create workflow files)");
+		log("\nRun: gh auth refresh -h github.com -s workflow");
+		const proceed = await prompt("Try anyway? (y/n)", "n");
+		if (proceed.toLowerCase() !== "y") {
+			process.exit(1);
+		}
+	}
 
 	// Detect git origin
 	const detectedRepo = getGitOrigin();

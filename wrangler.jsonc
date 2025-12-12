@@ -31,12 +31,20 @@
 				"class_name": "Sandbox",
 				"name": "Sandbox",
 			},
+			{
+				"class_name": "RepoActor",
+				"name": "REPO_ACTOR",
+			},
 		],
 	},
 	"migrations": [
 		{
 			"new_sqlite_classes": ["Sandbox"],
 			"tag": "v1",
+		},
+		{
+			"new_sqlite_classes": ["RepoActor"],
+			"tag": "v2",
 		},
 	],
 }

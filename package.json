@@ -11,6 +11,7 @@
 		"github:install": "npx tsx scripts/github-install.ts"
 	},
 	"dependencies": {
+		"@cloudflare/actors": "^0.0.1-beta.6",
 		"@cloudflare/sandbox": "^0.6.5",
 		"@octokit/auth-app": "^7.1.1",
 		"@octokit/rest": "^21.1.1",

@@ -528,3 +528,97 @@ export function buildPRContext(
 		"</pull_request>",
 	].join("\n");
 }
+
+// Helper to sleep for a given duration
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Workflow run info returned from GitHub API
+ */
+export interface WorkflowRunInfo {
+	id: number;
+	url: string;
+	status: string;
+	conclusion: string | null;
+}
+
+/**
+ * Poll for a workflow run triggered by a specific event
+ * Uses exponential backoff: 0s, 10s, 20s, 30s (total ~60s max)
+ */
+export async function findWorkflowRun(
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	workflowFileName: string,
+	eventType: string,
+	triggeringActor: string,
+	afterTimestamp: string
+): Promise<WorkflowRunInfo | null> {
+	const delays = [0, 10_000, 20_000, 30_000];
+	const logPrefix = `[${owner}/${repo}]`;
+
+	for (let i = 0; i < delays.length; i++) {
+		const delay = delays[i];
+		if (delay > 0) {
+			console.info(`${logPrefix} Waiting ${delay / 1000}s before polling for workflow run (attempt ${i + 1}/${delays.length})`);
+			await sleep(delay);
+		}
+
+		try {
+			const response = await octokit.actions.listWorkflowRuns({
+				owner,
+				repo,
+				workflow_id: workflowFileName,
+				event: eventType,
+				created: `>=${afterTimestamp}`,
+				per_page: 10,
+			});
+
+			// Find run matching our triggering actor
+			const run = response.data.workflow_runs.find(
+				(r) => r.triggering_actor?.login === triggeringActor
+			);
+
+			if (run) {
+				console.info(`${logPrefix} Found workflow run ${run.id} (status: ${run.status})`);
+				return {
+					id: run.id,
+					url: run.html_url,
+					status: run.status ?? "unknown",
+					conclusion: run.conclusion,
+				};
+			}
+
+			console.info(`${logPrefix} No matching workflow run found yet (attempt ${i + 1}/${delays.length})`);
+		} catch (error) {
+			console.error(`${logPrefix} Error polling for workflow run:`, error);
+		}
+	}
+
+	console.warn(`${logPrefix} Could not find workflow run after ${delays.length} attempts`);
+	return null;
+}
+
+/**
+ * Get the current status of a workflow run
+ */
+export async function getWorkflowRunStatus(
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	runId: number
+): Promise<{ status: string; conclusion: string | null }> {
+	const response = await octokit.actions.getWorkflowRun({
+		owner,
+		repo,
+		run_id: runId,
+	});
+
+	return {
+		status: response.data.status ?? "unknown",
+		conclusion: response.data.conclusion,
+	};
+}

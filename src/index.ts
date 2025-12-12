@@ -33,6 +33,7 @@ import { runOpencodeSandbox, type SandboxResult } from "./sandbox";
 import { runWorkflowMode } from "./workflow";
 
 export { Sandbox } from "@cloudflare/sandbox";
+export { RepoActor } from "./actors";
 
 const GITHUB_REPO_URL = "https://github.com/elithrar/ask-bonk";
 
@@ -116,6 +117,8 @@ async function handleIssueComment(payload: IssueCommentEvent, env: Env): Promise
 		context: parsed.context,
 		prompt: parsed.prompt,
 		triggerCommentId: parsed.triggerCommentId,
+		eventType: "issue_comment",
+		commentTimestamp: payload.comment.created_at,
 	});
 }
 
@@ -135,6 +138,8 @@ async function handlePRReviewComment(payload: PullRequestReviewCommentEvent, env
 		context: parsed.context,
 		prompt: parsed.prompt,
 		triggerCommentId: parsed.triggerCommentId,
+		eventType: "pull_request_review_comment",
+		commentTimestamp: payload.comment.created_at,
 	});
 }
 
@@ -154,6 +159,8 @@ async function handlePRReview(payload: PullRequestReviewEvent, env: Env): Promis
 		context: parsed.context,
 		prompt: parsed.prompt,
 		triggerCommentId: parsed.triggerCommentId,
+		eventType: "pull_request_review",
+		commentTimestamp: payload.review.submitted_at ?? new Date().toISOString(),
 	});
 }
 
@@ -175,6 +182,8 @@ interface ProcessRequestParams {
 	};
 	prompt: string;
 	triggerCommentId: number;
+	eventType: string;
+	commentTimestamp: string;
 }
 
 // Get the operational mode from environment
@@ -188,6 +197,8 @@ async function processRequest({
 	context,
 	prompt,
 	triggerCommentId,
+	eventType,
+	commentTimestamp,
 }: ProcessRequestParams): Promise<void> {
 	const logPrefix = `[${context.owner}/${context.repo}#${context.issueNumber}]`;
 	const mode = getBonkMode(env);
@@ -218,6 +229,9 @@ async function processRequest({
 			issueNumber: context.issueNumber,
 			defaultBranch: context.defaultBranch,
 			responseCommentId,
+			triggeringActor: context.actor,
+			eventType,
+			commentTimestamp,
 		});
 		return;
 	}
@@ -230,6 +244,8 @@ async function processRequest({
 		prompt,
 		triggerCommentId,
 		responseCommentId,
+		eventType,
+		commentTimestamp,
 	});
 }
 

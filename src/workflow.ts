@@ -8,7 +8,7 @@ import {
 	createOrUpdateFile,
 	createPullRequest,
 	findOpenPR,
-	triggerWorkflowDispatch,
+	findWorkflowRun,
 	updateComment,
 } from "./github";
 
@@ -21,6 +21,9 @@ export interface WorkflowContext {
 	issueNumber: number;
 	defaultBranch: string;
 	responseCommentId: number;
+	triggeringActor: string;
+	eventType: string;
+	commentTimestamp: string;
 }
 
 export interface WorkflowResult {
@@ -55,27 +58,45 @@ jobs:
       (github.event_name == 'pull_request_review' && (contains(github.event.review.body, '${BOT_MENTION}') || contains(github.event.review.body, '${BOT_COMMAND}')))
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: write
       issues: write
       pull-requests: write
     steps:
-      - uses: sst/opencode/github@latest
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          anthropic_api_key: \${{ secrets.ANTHROPIC_API_KEY }}
+          fetch-depth: 1
+
+      - name: Run Bonk
+        uses: sst/opencode/github@latest
+        env:
+          ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}
+        with:
+          model: anthropic/claude-sonnet-4-20250514
 `;
 }
 
 
 
 /**
- * Handle workflow mode: check for workflow file, create PR if missing, or trigger workflow
+ * Handle workflow mode: check for workflow file, create PR if missing, or track workflow run
  */
 export async function runWorkflowMode(
 	env: Env,
 	installationId: number,
 	context: WorkflowContext
 ): Promise<WorkflowResult> {
-	const { owner, repo, issueNumber, defaultBranch, responseCommentId } = context;
+	const {
+		owner,
+		repo,
+		issueNumber,
+		defaultBranch,
+		responseCommentId,
+		triggeringActor,
+		eventType,
+		commentTimestamp,
+	} = context;
 	const logPrefix = `[${owner}/${repo}#${issueNumber}]`;
 	const octokit = await createOctokit(env, installationId);
 
@@ -87,45 +108,58 @@ export async function runWorkflowMode(
 		return await createWorkflowPR(octokit, owner, repo, defaultBranch, responseCommentId);
 	}
 
-	// Workflow exists, trigger it
-	console.info(`${logPrefix} Triggering workflow dispatch`);
-	try {
-		await triggerWorkflowDispatch(
-			octokit,
-			owner,
-			repo,
-			"bonk.yml",
-			defaultBranch,
-			{}
-		);
+	// Workflow exists - GitHub triggers it automatically via the comment event
+	// Our job: find the run and hand off to RepoActor for completion tracking
+	console.info(`${logPrefix} Polling for workflow run`);
 
+	const run = await findWorkflowRun(
+		octokit,
+		owner,
+		repo,
+		"bonk.yml",
+		eventType,
+		triggeringActor,
+		commentTimestamp
+	);
+
+	if (run) {
+		console.info(`${logPrefix} Found workflow run ${run.id}`);
+
+		// Update comment with workflow link
 		await updateComment(
 			octokit,
 			owner,
 			repo,
 			responseCommentId,
-			"Bonk workflow triggered. Check the Actions tab for progress."
+			`Bonk is working on it...\n\n[View workflow run](${run.url})`
+		);
+
+		// Hand off to RepoActor for completion tracking
+		const actorId = env.REPO_ACTOR.idFromName(`${owner}/${repo}`);
+		const actor = env.REPO_ACTOR.get(actorId);
+
+		await actor.setInstallationId(installationId);
+		await actor.trackRun(responseCommentId, run.id, run.url, issueNumber);
+
+		return {
+			success: true,
+			message: `Tracking workflow run ${run.id}`,
+		};
+	} else {
+		console.warn(`${logPrefix} Could not find workflow run, falling back to Actions link`);
+
+		// Fallback: link to Actions tab
+		await updateComment(
+			octokit,
+			owner,
+			repo,
+			responseCommentId,
+			`Bonk is working on it...\n\n[View Actions](https://github.com/${owner}/${repo}/actions)`
 		);
 
 		return {
 			success: true,
-			message: "Workflow triggered successfully",
-		};
-	} catch (error) {
-		const errorMessage = error instanceof Error ? error.message : "Unknown error";
-		console.error(`${logPrefix} Failed to trigger workflow:`, errorMessage);
-
-		await updateComment(
-			octokit,
-			owner,
-			repo,
-			responseCommentId,
-			`Failed to trigger Bonk workflow.\n\n\`\`\`\n${errorMessage}\n\`\`\``
-		);
-
-		return {
-			success: false,
-			message: `Failed to trigger workflow: ${errorMessage}`,
+			message: "Workflow triggered (run not found, linked to Actions tab)",
 		};
 	}
 }
