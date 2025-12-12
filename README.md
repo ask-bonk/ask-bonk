@@ -1,61 +1,37 @@
 # ask-bonk
 
-A GitHub bot powered by OpenCode that responds to mentions in issues and PRs. Runs on Cloudflare Workers with sandboxed code execution.
+Bonk is like Ask Jeeves, but well, for code.
+
+It's a code (and docs!) review agent that responds to mentions in issues and PRs. Built on [OpenCode](https://github.com/sst/opencode), Bonk can review code, answer questions about your codebase, and make changes directly by opening PRs and telling you where you can do better.
+
+- **Code & doc review** - Get feedback on PRs, explain code, or ask questions about your repo just by mentioning `/bonk` in an issue, PR comment or even line comments.
+- **Make changes** - Bonk can edit files and create PRs from issues and update PRs.
+- **Fully configurable** - Supports any [model provider](https://opencode.ai/docs/providers) that Opencode does (Anthropic, OpenAI, Google, etc.). Why reinvent the wheel when there's a perfectly round one already?
+
 
 ## Setup
 
-### 1. Create a GitHub App
+### GitHub App
 
-1. Go to **GitHub Settings** > **Developer settings** > **GitHub Apps** > **New GitHub App**
-2. Configure:
-   - **Name**: `ask-bonk` (or your preferred name)
-   - **Webhook URL**: `https://your-worker.workers.dev/webhooks`
-   - **Webhook secret**: Generate a secure secret
-   - **Permissions**:
-     - Issues: Read & Write
-     - Pull requests: Read & Write
-     - Contents: Read & Write
-     - Metadata: Read
-   - **Subscribe to events**:
-     - Issue comments
-     - Pull request review comments
-     - Pull request reviews
-3. Generate and download a private key
+**Managed (recommended)**: Install the [ask-bonk GitHub App](https://github.com/apps/ask-bonk) on your repositories. No configuration required.
 
-### 2. Configure Secrets
+**Self-hosted**: Deploy your own instance and [create a GitHub App](https://docs.github.com/en/apps/creating-github-apps) with the following permissions:
+- Issues: Read & Write
+- Pull requests: Read & Write
+- Contents: Read & Write
+- Metadata: Read
 
-**Important**: The private key must be in PKCS#8 format. GitHub generates keys in PKCS#1 format, so you need to convert it first:
+Subscribe to: Issue comments, Pull request review comments, Pull request reviews.
 
-```bash
-# Convert the private key from PKCS#1 to PKCS#8
-openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt \
-  -in your-app-name.private-key.pem \
-  -out your-app-name.private-key.pkcs8.pem
-```
+### Runner Modes
 
-Then set the secrets:
+**GitHub Actions (default)**: Bonk triggers a workflow in your repo using [`sst/opencode/github`](https://github.com/sst/opencode). Requires `ANTHROPIC_API_KEY` as a repository secret.
 
-```bash
-wrangler secret put GITHUB_APP_ID
-wrangler secret put GITHUB_WEBHOOK_SECRET
-wrangler secret put ANTHROPIC_API_KEY
-
-# For the private key, use the converted PKCS#8 file
-cat your-app-name.private-key.pkcs8.pem | wrangler secret put GITHUB_APP_PRIVATE_KEY
-```
-
-### 3. Deploy
-
-```bash
-npm install
-npx wrangler deploy
-```
-
-**Note**: First deployment may take 2-3 minutes for the container to provision.
+**Cloudflare Sandbox SDK (beta)**: Runs OpenCode in [Cloudflare Containers](https://developers.cloudflare.com/containers/). Set `BONK_MODE=sandbox_sdk` in your deployment.
 
 ## Usage
 
-Mention the bot in any issue or PR comment:
+Mention the bot in any issue or PR:
 
 ```
 @ask-bonk fix the type error in utils.ts
@@ -64,108 +40,32 @@ Mention the bot in any issue or PR comment:
 Or use the slash command:
 
 ```
-/bonk add tests for the new feature
+/bonk add tests for the auth module
 ```
 
-The bot will:
-1. Immediately reply with "Bonk is working on it..."
-2. Clone the repository and run OpenCode in a sandbox
-3. Update the comment with the response
-4. If changes are made on an issue, create a PR
+## Config
 
-## Configuration
+### Defaults
 
-### Per-Repository Settings
+| Setting | Value |
+|---------|-------|
+| Mention trigger | `@ask-bonk` |
+| Slash command | `/bonk` |
+| Model | `anthropic/claude-sonnet-4-20250514` |
 
-Create `.bonk/config.jsonc` in your repository root:
+### OpenCode Config
+
+For advanced configuration (custom providers, system prompts, etc.), create `.opencode/opencode.jsonc`. See [OpenCode docs](https://opencode.ai/docs/config) for all options.
 
 ```jsonc
 {
-  // Override the default model
-  "model": "anthropic/claude-sonnet-4-20250514",
-
-  // Customize bot triggers (optional)
-  "botMention": "@my-bot",
-  "botCommand": "/mybot"
+  "provider": {
+    "anthropic": {}
+  },
+  "model": {
+    "default": "anthropic/claude-sonnet-4-20250514"
+  }
 }
-```
-
-### Configuration Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `model` | `anthropic/claude-opus-4-5` | LLM model to use |
-| `botMention` | `@ask-bonk` | Mention trigger |
-| `botCommand` | `/bonk` | Slash command trigger |
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DEFAULT_MODEL` | `anthropic/claude-opus-4-5` | Fallback model when not configured per-repo |
-
-## Supported Events
-
-- **Issue comments** - Comments on issues
-- **PR review comments** - Line/file comments on pull requests
-- **PR reviews** - Review body with comments
-
-## Notes
-
-### Fork PRs
-
-Fork PRs are **not supported**. The bot cannot push to fork branches and will ignore mentions on PRs from forked repositories.
-
-### Session Sharing
-
-OpenCode session links are only included in responses for **public repositories**. Private repository sessions are not shared.
-
-### Rate Limiting / Abuse Prevention
-
-> **TODO**: Not yet implemented
-
-- [ ] Per-user cooldowns
-- [ ] Per-repo rate limits
-- [ ] Maximum session duration limits
-- [ ] Queue system for high-traffic repos
-- [ ] Blocklist for abusive users/repos
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Run locally (requires Docker)
-npm run dev
-
-# Run tests
-npm test
-
-# Type check
-npx tsc --noEmit
-
-# Deploy
-npm run deploy
-```
-
-## Architecture
-
-```
-┌─────────┐    ┌──────────────────┐    ┌─────────────────┐    ┌──────────────┐
-│ GitHub  │───▶│ Cloudflare       │───▶│ Cloudflare      │───▶│ OpenCode     │
-│ Webhook │    │ Worker           │    │ Container       │    │ Server       │
-└─────────┘    └──────────────────┘    └─────────────────┘    └──────────────┘
-                     │                        │                      │
-               1. Verify sig            3. Clone repo          5. Model processes
-               2. Create comment        4. Start opencode         prompt & works
-                     │                        │                      on repo
-                     │                        │◀─────────────────────┘
-                     │                   6. Git commit/push
-                     │                      (if changes)
-                     │◀───────────────────────┘
-               7. Update comment
-                  (+ create PR if needed)
 ```
 
 ## License

@@ -1,9 +1,10 @@
+import { Hono } from "hono";
 import type {
 	IssueCommentEvent,
 	PullRequestReviewCommentEvent,
 	PullRequestReviewEvent,
 } from "@octokit/webhooks-types";
-import type { BonkConfig, Env } from "./types";
+import type { BonkMode, Env } from "./types";
 import {
 	createOctokit,
 	createGraphQL,
@@ -14,7 +15,6 @@ import {
 	updateComment,
 	createPullRequest,
 	getRepository,
-	getBonkConfig,
 	fetchIssue,
 	fetchPullRequest,
 	buildIssueContext,
@@ -30,26 +30,26 @@ import {
 } from "./events";
 import { extractImages } from "./images";
 import { runOpencodeSandbox, type SandboxResult } from "./sandbox";
+import { runWorkflowMode } from "./workflow";
 
 export { Sandbox } from "@cloudflare/sandbox";
 
-export default {
-	async fetch(request: Request, env: Env): Promise<Response> {
-		const url = new URL(request.url);
+const GITHUB_REPO_URL = "https://github.com/elithrar/ask-bonk";
 
-		// Health check endpoint
-		if (url.pathname === "/" || url.pathname === "/health") {
-			return new Response("OK", { status: 200 });
-		}
+const app = new Hono<{ Bindings: Env }>();
 
-		// Webhook endpoint
-		if (url.pathname === "/webhooks" && request.method === "POST") {
-			return handleWebhook(request, env);
-		}
+// Redirect to GitHub repo
+app.get("/", (c) => c.redirect(GITHUB_REPO_URL, 302));
 
-		return new Response("Not Found", { status: 404 });
-	},
-};
+// Health check
+app.get("/health", (c) => c.text("OK"));
+
+// Webhook endpoint
+app.post("/webhooks", async (c) => {
+	return handleWebhook(c.req.raw, c.env);
+});
+
+export default app;
 
 function getWebhookLogContext(event: { name: string; payload: unknown }): string {
 	const payload = event.payload as Record<string, unknown>;
@@ -107,10 +107,7 @@ async function handleIssueComment(payload: IssueCommentEvent, env: Env): Promise
 		return;
 	}
 
-	const octokit = await createOctokit(env, installationId);
-	const bonkConfig = await getBonkConfig(octokit, payload.repository.owner.login, payload.repository.name);
-
-	const parsed = parseIssueCommentEvent(payload, bonkConfig);
+	const parsed = parseIssueCommentEvent(payload);
 	if (!parsed) return;
 
 	await processRequest({
@@ -119,7 +116,6 @@ async function handleIssueComment(payload: IssueCommentEvent, env: Env): Promise
 		context: parsed.context,
 		prompt: parsed.prompt,
 		triggerCommentId: parsed.triggerCommentId,
-		bonkConfig,
 	});
 }
 
@@ -130,15 +126,7 @@ async function handlePRReviewComment(payload: PullRequestReviewCommentEvent, env
 		return;
 	}
 
-	const octokit = await createOctokit(env, installationId);
-	const bonkConfig = await getBonkConfig(
-		octokit,
-		payload.repository.owner.login,
-		payload.repository.name,
-		payload.pull_request.head.ref
-	);
-
-	const parsed = parsePRReviewCommentEvent(payload, bonkConfig);
+	const parsed = parsePRReviewCommentEvent(payload);
 	if (!parsed) return;
 
 	await processRequest({
@@ -147,7 +135,6 @@ async function handlePRReviewComment(payload: PullRequestReviewCommentEvent, env
 		context: parsed.context,
 		prompt: parsed.prompt,
 		triggerCommentId: parsed.triggerCommentId,
-		bonkConfig,
 	});
 }
 
@@ -158,15 +145,7 @@ async function handlePRReview(payload: PullRequestReviewEvent, env: Env): Promis
 		return;
 	}
 
-	const octokit = await createOctokit(env, installationId);
-	const bonkConfig = await getBonkConfig(
-		octokit,
-		payload.repository.owner.login,
-		payload.repository.name,
-		payload.pull_request.head.ref
-	);
-
-	const parsed = parsePRReviewEvent(payload, bonkConfig);
+	const parsed = parsePRReviewEvent(payload);
 	if (!parsed) return;
 
 	await processRequest({
@@ -175,7 +154,6 @@ async function handlePRReview(payload: PullRequestReviewEvent, env: Env): Promis
 		context: parsed.context,
 		prompt: parsed.prompt,
 		triggerCommentId: parsed.triggerCommentId,
-		bonkConfig,
 	});
 }
 
@@ -197,7 +175,11 @@ interface ProcessRequestParams {
 	};
 	prompt: string;
 	triggerCommentId: number;
-	bonkConfig: BonkConfig;
+}
+
+// Get the operational mode from environment
+function getBonkMode(env: Env): BonkMode {
+	return env.BONK_MODE ?? "sandbox_sdk";
 }
 
 async function processRequest({
@@ -206,11 +188,10 @@ async function processRequest({
 	context,
 	prompt,
 	triggerCommentId,
-	bonkConfig,
 }: ProcessRequestParams): Promise<void> {
 	const logPrefix = `[${context.owner}/${context.repo}#${context.issueNumber}]`;
+	const mode = getBonkMode(env);
 	const octokit = await createOctokit(env, installationId);
-	const gql = await createGraphQL(env, installationId);
 
 	// Check permissions
 	const canWrite = await hasWriteAccess(octokit, context.owner, context.repo, context.actor);
@@ -227,14 +208,53 @@ async function processRequest({
 		context.issueNumber,
 		"Bonk is working on it..."
 	);
-	console.info(`${logPrefix} Created working comment: ${responseCommentId}`);
+	console.info(`${logPrefix} Created working comment: ${responseCommentId}, mode: ${mode}`);
+
+	// Switch based on mode
+	if (mode === "github_workflow") {
+		await runWorkflowMode(env, installationId, {
+			owner: context.owner,
+			repo: context.repo,
+			issueNumber: context.issueNumber,
+			defaultBranch: context.defaultBranch,
+			responseCommentId,
+		});
+		return;
+	}
+
+	// Default: sandbox_sdk mode
+	await processSandboxRequest({
+		env,
+		installationId,
+		context,
+		prompt,
+		triggerCommentId,
+		responseCommentId,
+	});
+}
+
+interface ProcessSandboxParams extends ProcessRequestParams {
+	responseCommentId: number;
+}
+
+async function processSandboxRequest({
+	env,
+	installationId,
+	context,
+	prompt,
+	triggerCommentId,
+	responseCommentId,
+}: ProcessSandboxParams): Promise<void> {
+	const logPrefix = `[${context.owner}/${context.repo}#${context.issueNumber}]`;
+	const octokit = await createOctokit(env, installationId);
+	const gql = await createGraphQL(env, installationId);
 
 	try {
 		// Get repository info
 		const repoData = await getRepository(octokit, context.owner, context.repo);
 
-		// Get model configuration
-		const modelConfig = getModel(env, bonkConfig.model);
+		// Get model configuration (uses DEFAULT_MODEL env var)
+		const modelConfig = getModel(env);
 		const modelString = `${modelConfig.providerID}/${modelConfig.modelID}`;
 
 		// Get installation token for git operations

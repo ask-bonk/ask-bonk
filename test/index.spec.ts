@@ -8,7 +8,7 @@ import {
 	formatResponse,
 	generateBranchName,
 } from "../src/events";
-import type { BonkConfig, Env } from "../src/types";
+import type { Env } from "../src/types";
 import type {
 	IssueCommentEvent,
 	PullRequestReviewCommentEvent,
@@ -17,13 +17,6 @@ import type {
 // Read fixtures
 import issueCommentFixture from "./fixtures/issue-comment.json";
 import prReviewCommentFixture from "./fixtures/pr-review-comment.json";
-
-// Mock config for testing
-const mockConfig: BonkConfig = {
-	botMention: "@ask-bonk",
-	botCommand: "/bonk",
-	model: "anthropic/claude-opus-4-5",
-};
 
 // Mock env for model tests
 const mockEnv: Env = {
@@ -37,45 +30,39 @@ const mockEnv: Env = {
 
 describe("Mention Detection", () => {
 	it("detects @ask-bonk mention", () => {
-		expect(hasMention("@ask-bonk fix this", mockConfig)).toBe(true);
+		expect(hasMention("@ask-bonk fix this")).toBe(true);
 	});
 
 	it("detects /bonk command", () => {
-		expect(hasMention("/bonk fix this", mockConfig)).toBe(true);
+		expect(hasMention("/bonk fix this")).toBe(true);
 	});
 
 	it("detects mention in middle of text", () => {
-		expect(hasMention("hey @ask-bonk can you help", mockConfig)).toBe(true);
+		expect(hasMention("hey @ask-bonk can you help")).toBe(true);
 	});
 
 	it("does not match partial mentions", () => {
-		expect(hasMention("@ask-bonker", mockConfig)).toBe(false);
+		expect(hasMention("@ask-bonker")).toBe(false);
 	});
 
 	it("does not match without mention", () => {
-		expect(hasMention("please fix this bug", mockConfig)).toBe(false);
+		expect(hasMention("please fix this bug")).toBe(false);
 	});
 
-	it("works with custom bot mention", () => {
-		const customConfig: BonkConfig = { botMention: "@custom-bot" };
-		expect(hasMention("@custom-bot help", customConfig)).toBe(true);
-		expect(hasMention("/bonk help", customConfig)).toBe(true); // default command still works
-	});
-
-	it("works with default config", () => {
-		expect(hasMention("@ask-bonk help", {})).toBe(true);
-		expect(hasMention("/bonk help", {})).toBe(true);
+	it("works with either trigger", () => {
+		expect(hasMention("@ask-bonk help")).toBe(true);
+		expect(hasMention("/bonk help")).toBe(true);
 	});
 });
 
 describe("Prompt Extraction", () => {
-	it("extracts full prompt with mention", () => {
-		const prompt = extractPrompt("@ask-bonk fix the type error", mockConfig);
+	it("extracts full prompt", () => {
+		const prompt = extractPrompt("@ask-bonk fix the type error");
 		expect(prompt).toBe("@ask-bonk fix the type error");
 	});
 
 	it("returns default for bare mention", () => {
-		const prompt = extractPrompt("@ask-bonk", mockConfig);
+		const prompt = extractPrompt("@ask-bonk");
 		expect(prompt).toBe("Summarize this thread");
 	});
 
@@ -89,7 +76,7 @@ describe("Prompt Extraction", () => {
 			commitId: "abc123",
 			originalCommitId: "def456",
 		};
-		const prompt = extractPrompt("@ask-bonk improve this", mockConfig, reviewContext);
+		const prompt = extractPrompt("@ask-bonk improve this", reviewContext);
 		expect(prompt).toContain("src/utils.ts");
 		expect(prompt).toContain("line 5");
 	});
@@ -98,8 +85,7 @@ describe("Prompt Extraction", () => {
 describe("Issue Comment Event Parsing", () => {
 	it("parses valid issue comment event", () => {
 		const result = parseIssueCommentEvent(
-			issueCommentFixture as unknown as IssueCommentEvent,
-			mockConfig
+			issueCommentFixture as unknown as IssueCommentEvent
 		);
 
 		expect(result).not.toBeNull();
@@ -114,8 +100,7 @@ describe("Issue Comment Event Parsing", () => {
 	it("returns null for non-created action", () => {
 		const payload = { ...issueCommentFixture, action: "deleted" };
 		const result = parseIssueCommentEvent(
-			payload as unknown as IssueCommentEvent,
-			mockConfig
+			payload as unknown as IssueCommentEvent
 		);
 		expect(result).toBeNull();
 	});
@@ -126,8 +111,7 @@ describe("Issue Comment Event Parsing", () => {
 			comment: { ...issueCommentFixture.comment, body: "just a regular comment" },
 		};
 		const result = parseIssueCommentEvent(
-			payload as unknown as IssueCommentEvent,
-			mockConfig
+			payload as unknown as IssueCommentEvent
 		);
 		expect(result).toBeNull();
 	});
@@ -136,8 +120,7 @@ describe("Issue Comment Event Parsing", () => {
 describe("PR Review Comment Event Parsing", () => {
 	it("parses valid PR review comment event", () => {
 		const result = parsePRReviewCommentEvent(
-			prReviewCommentFixture as unknown as PullRequestReviewCommentEvent,
-			mockConfig
+			prReviewCommentFixture as unknown as PullRequestReviewCommentEvent
 		);
 
 		expect(result).not.toBeNull();
@@ -162,28 +145,24 @@ describe("PR Review Comment Event Parsing", () => {
 			},
 		};
 		const result = parsePRReviewCommentEvent(
-			forkPayload as unknown as PullRequestReviewCommentEvent,
-			mockConfig
+			forkPayload as unknown as PullRequestReviewCommentEvent
 		);
 		expect(result).toBeNull();
 	});
 });
 
 describe("Model Configuration", () => {
-	it("returns default model when not configured", () => {
+	it("returns default model when DEFAULT_MODEL set", () => {
 		const model = getModel(mockEnv);
 		expect(model.providerID).toBe("anthropic");
 		expect(model.modelID).toBe("claude-opus-4-5");
 	});
 
-	it("uses config model override", () => {
-		const model = getModel(mockEnv, "anthropic/claude-sonnet-4-20250514");
+	it("returns hardcoded default when no DEFAULT_MODEL", () => {
+		const envWithoutDefault = { ...mockEnv, DEFAULT_MODEL: undefined };
+		const model = getModel(envWithoutDefault);
 		expect(model.providerID).toBe("anthropic");
 		expect(model.modelID).toBe("claude-sonnet-4-20250514");
-	});
-
-	it("throws for invalid model format", () => {
-		expect(() => getModel(mockEnv, "invalid")).toThrow();
 	});
 });
 

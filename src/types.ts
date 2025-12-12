@@ -1,5 +1,8 @@
 import type { Sandbox } from "@cloudflare/sandbox";
 
+// Bonk operational mode
+export type BonkMode = "sandbox_sdk" | "github_workflow";
+
 // Environment bindings
 export interface Env {
 	Sandbox: DurableObjectNamespace<Sandbox>;
@@ -8,14 +11,10 @@ export interface Env {
 	GITHUB_WEBHOOK_SECRET: string;
 	ANTHROPIC_API_KEY: string;
 	DEFAULT_MODEL?: string;
+	BONK_MODE?: BonkMode;
 }
 
-// Repository configuration from .bonk/config.jsonc
-export interface BonkConfig {
-	model?: string;
-	botMention?: string;
-	botCommand?: string;
-}
+
 
 // Context passed through event handling
 export interface EventContext {

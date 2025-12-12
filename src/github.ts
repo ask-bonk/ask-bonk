@@ -4,7 +4,6 @@ import { Webhooks } from "@octokit/webhooks";
 import { graphql } from "@octokit/graphql";
 import type {
 	Env,
-	BonkConfig,
 	GitHubIssue,
 	GitHubPullRequest,
 	IssueQueryResponse,
@@ -177,35 +176,7 @@ export async function getRepository(
 	return response.data;
 }
 
-// Read .bonk/config.jsonc from repository
-export async function getBonkConfig(
-	octokit: Octokit,
-	owner: string,
-	repo: string,
-	ref?: string
-): Promise<BonkConfig> {
-	try {
-		const response = await octokit.repos.getContent({
-			owner,
-			repo,
-			path: ".bonk/config.jsonc",
-			ref,
-		});
 
-		if ("content" in response.data) {
-			const content = atob(response.data.content);
-			// Strip JSONC comments (simple approach)
-			const jsonContent = content
-				.replace(/\/\/.*$/gm, "")
-				.replace(/\/\*[\s\S]*?\*\//g, "");
-			return JSON.parse(jsonContent);
-		}
-	} catch {
-		// Config file doesn't exist or can't be read
-	}
-
-	return {};
-}
 
 // Fetch issue data via GraphQL
 export async function fetchIssue(
@@ -374,6 +345,135 @@ export function buildIssueContext(
 			: []),
 		"</issue>",
 	].join("\n");
+}
+
+// Check if a file exists in a repository
+export async function fileExists(
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	path: string,
+	ref?: string
+): Promise<boolean> {
+	try {
+		await octokit.repos.getContent({ owner, repo, path, ref });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+// Get file content from repository
+export async function getFileContent(
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	path: string,
+	ref?: string
+): Promise<string | null> {
+	try {
+		const response = await octokit.repos.getContent({ owner, repo, path, ref });
+		if ("content" in response.data) {
+			return atob(response.data.content);
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
+
+// Get default branch SHA
+export async function getDefaultBranchSha(
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	branch: string
+): Promise<string> {
+	const response = await octokit.git.getRef({
+		owner,
+		repo,
+		ref: `heads/${branch}`,
+	});
+	return response.data.object.sha;
+}
+
+// Create a new branch
+export async function createBranch(
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	branchName: string,
+	sha: string
+): Promise<void> {
+	await octokit.git.createRef({
+		owner,
+		repo,
+		ref: `refs/heads/${branchName}`,
+		sha,
+	});
+}
+
+// Create or update a file in a repository
+export async function createOrUpdateFile(
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	path: string,
+	content: string,
+	message: string,
+	branch: string,
+	sha?: string
+): Promise<void> {
+	await octokit.repos.createOrUpdateFileContents({
+		owner,
+		repo,
+		path,
+		message,
+		content: btoa(content),
+		branch,
+		sha,
+	});
+}
+
+// Find an open PR from a specific branch
+export async function findOpenPR(
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	headBranch: string
+): Promise<{ number: number; url: string } | null> {
+	const response = await octokit.pulls.list({
+		owner,
+		repo,
+		state: "open",
+		head: `${owner}:${headBranch}`,
+	});
+
+	if (response.data.length > 0) {
+		return {
+			number: response.data[0].number,
+			url: response.data[0].html_url,
+		};
+	}
+	return null;
+}
+
+// Trigger a workflow dispatch event
+export async function triggerWorkflowDispatch(
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	workflowId: string,
+	ref: string,
+	inputs: Record<string, string>
+): Promise<void> {
+	await octokit.actions.createWorkflowDispatch({
+		owner,
+		repo,
+		workflow_id: workflowId,
+		ref,
+		inputs,
+	});
 }
 
 // Build context prompt for a PR

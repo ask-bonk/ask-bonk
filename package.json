@@ -7,18 +7,22 @@
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
 		"test": "vitest",
-		"cf-typegen": "wrangler types"
+		"cf-typegen": "wrangler types",
+		"github:install": "npx tsx scripts/github-install.ts"
 	},
 	"dependencies": {
 		"@cloudflare/sandbox": "^0.6.5",
 		"@octokit/auth-app": "^7.1.1",
 		"@octokit/rest": "^21.1.1",
 		"@octokit/webhooks": "^14.2.0",
-		"@opencode-ai/sdk": "^1.0.149"
+		"@opencode-ai/sdk": "^1.0.149",
+		"hono": "^4.10.8"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.8.19",
 		"@octokit/webhooks-types": "^7.6.1",
+		"@types/node": "^22.10.2",
+		"tsx": "^4.19.2",
 		"typescript": "^5.5.2",
 		"vitest": "~3.2.0",
 		"wrangler": "^4.54.0"

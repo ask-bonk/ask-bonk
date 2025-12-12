@@ -3,39 +3,24 @@ import type {
 	PullRequestReviewCommentEvent,
 	PullRequestReviewEvent,
 } from "@octokit/webhooks-types";
-import type { BonkConfig, Env, EventContext, ReviewCommentContext } from "./types";
+import type { Env, EventContext, ReviewCommentContext } from "./types";
 
-// Default mention patterns
-const DEFAULT_BOT_MENTION = "@ask-bonk";
-const DEFAULT_BOT_COMMAND = "/bonk";
-
-// Configurable mention patterns
-function getMentionPattern(config: BonkConfig): RegExp {
-	const mention = config.botMention ?? DEFAULT_BOT_MENTION;
-	const command = config.botCommand ?? DEFAULT_BOT_COMMAND;
-	// Escape special regex characters in the mention/command
-	const escapedMention = mention.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	return new RegExp(`(?:^|\\s)(?:${escapedMention}|${escapedCommand})(?=$|\\s)`);
-}
+// Mention patterns
+const BOT_MENTION = "@ask-bonk";
+const BOT_COMMAND = "/bonk";
+const MENTION_PATTERN = new RegExp(`(?:^|\\s)(?:${BOT_MENTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}|${BOT_COMMAND.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})(?=$|\\s)`);
 
 // Check if a comment body contains a mention
-export function hasMention(body: string, config: BonkConfig = {}): boolean {
-	return getMentionPattern(config).test(body.trim());
+export function hasMention(body: string): boolean {
+	return MENTION_PATTERN.test(body.trim());
 }
 
-// Extract the prompt from comment body (everything after the mention)
-export function extractPrompt(
-	body: string,
-	config: BonkConfig = {},
-	reviewContext?: ReviewCommentContext
-): string {
-	const mention = config.botMention ?? DEFAULT_BOT_MENTION;
-	const command = config.botCommand ?? DEFAULT_BOT_COMMAND;
+// Extract the prompt from comment body
+export function extractPrompt(body: string, reviewContext?: ReviewCommentContext): string {
 	const trimmed = body.trim();
 
 	// If body is just the mention/command, provide default behavior
-	if (trimmed === mention || trimmed === command) {
+	if (trimmed === BOT_MENTION || trimmed === BOT_COMMAND) {
 		if (reviewContext) {
 			return `Review this code change and suggest improvements for the commented lines:\n\nFile: ${reviewContext.file}\nLines: ${reviewContext.line}\n\n${reviewContext.diffHunk}`;
 		}
@@ -79,10 +64,7 @@ export function isForkPR(payload: IssueCommentEvent | PullRequestReviewCommentEv
 }
 
 // Parse issue_comment event
-export function parseIssueCommentEvent(
-	payload: IssueCommentEvent,
-	config: BonkConfig = {}
-): {
+export function parseIssueCommentEvent(payload: IssueCommentEvent): {
 	context: Omit<EventContext, "env">;
 	prompt: string;
 	triggerCommentId: number;
@@ -93,7 +75,7 @@ export function parseIssueCommentEvent(
 	}
 
 	// Check for mention
-	if (!hasMention(payload.comment.body, config)) {
+	if (!hasMention(payload.comment.body)) {
 		return null;
 	}
 
@@ -110,16 +92,13 @@ export function parseIssueCommentEvent(
 			isPrivate: payload.repository.private,
 			defaultBranch: payload.repository.default_branch,
 		},
-		prompt: extractPrompt(payload.comment.body, config),
+		prompt: extractPrompt(payload.comment.body),
 		triggerCommentId: payload.comment.id,
 	};
 }
 
 // Parse pull_request_review_comment event
-export function parsePRReviewCommentEvent(
-	payload: PullRequestReviewCommentEvent,
-	config: BonkConfig = {}
-): {
+export function parsePRReviewCommentEvent(payload: PullRequestReviewCommentEvent): {
 	context: Omit<EventContext, "env">;
 	prompt: string;
 	triggerCommentId: number;
@@ -131,7 +110,7 @@ export function parsePRReviewCommentEvent(
 	}
 
 	// Check for mention
-	if (!hasMention(payload.comment.body, config)) {
+	if (!hasMention(payload.comment.body)) {
 		return null;
 	}
 
@@ -156,17 +135,14 @@ export function parsePRReviewCommentEvent(
 			headSha: payload.pull_request.head.sha,
 			isFork: false,
 		},
-		prompt: extractPrompt(payload.comment.body, config, reviewContext),
+		prompt: extractPrompt(payload.comment.body, reviewContext),
 		triggerCommentId: payload.comment.id,
 		reviewContext,
 	};
 }
 
 // Parse pull_request_review event
-export function parsePRReviewEvent(
-	payload: PullRequestReviewEvent,
-	config: BonkConfig = {}
-): {
+export function parsePRReviewEvent(payload: PullRequestReviewEvent): {
 	context: Omit<EventContext, "env">;
 	prompt: string;
 	triggerCommentId: number;
@@ -177,7 +153,7 @@ export function parsePRReviewEvent(
 	}
 
 	// Check for mention in review body
-	if (!payload.review.body || !hasMention(payload.review.body, config)) {
+	if (!payload.review.body || !hasMention(payload.review.body)) {
 		return null;
 	}
 
@@ -200,14 +176,14 @@ export function parsePRReviewEvent(
 			headSha: payload.pull_request.head.sha,
 			isFork: false,
 		},
-		prompt: extractPrompt(payload.review.body, config),
+		prompt: extractPrompt(payload.review.body),
 		triggerCommentId: payload.review.id,
 	};
 }
 
-// Get model configuration
-export function getModel(env: Env, configModel?: string): { providerID: string; modelID: string } {
-	const model = configModel ?? env.DEFAULT_MODEL ?? "anthropic/claude-opus-4-5";
+// Get model configuration from environment
+export function getModel(env: Env): { providerID: string; modelID: string } {
+	const model = env.DEFAULT_MODEL ?? "anthropic/claude-sonnet-4-20250514";
 	const [providerID, ...rest] = model.split("/");
 	const modelID = rest.join("/");
 

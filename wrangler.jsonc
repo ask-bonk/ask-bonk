@@ -11,6 +11,12 @@
 			"head_sampling_rate": 0.1,
 		},
 	},
+	"vars": {
+		// Operational mode:
+		// - "sandbox_sdk" (default): Run OpenCode in Cloudflare Containers
+		// - "github_workflow": Trigger GitHub Actions workflow in target repo
+		"BONK_MODE": "github_workflow",
+	},
 	"containers": [
 		{
 			"class_name": "Sandbox",
