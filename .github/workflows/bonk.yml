@@ -1,0 +1,37 @@
+name: Bonk
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  bonk:
+    if: |
+      github.event.sender.type != 'Bot' &&
+      (
+        (github.event_name == 'issue_comment' && (contains(github.event.comment.body, '@ask-bonk') || contains(github.event.comment.body, '/bonk'))) ||
+        (github.event_name == 'pull_request_review_comment' && (contains(github.event.comment.body, '@ask-bonk') || contains(github.event.comment.body, '/bonk'))) ||
+        (github.event_name == 'pull_request_review' && (contains(github.event.review.body, '@ask-bonk') || contains(github.event.review.body, '/bonk')))
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Bonk
+        uses: sst/opencode/github@latest
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        with:
+          model: opencode/claude-sonnet-4-20250514
