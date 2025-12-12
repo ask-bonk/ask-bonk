@@ -214,14 +214,45 @@ function createBranch(repo: string, branch: string, baseBranch: string): boolean
 	}
 }
 
+// Get file SHA if it exists (needed for updates)
+function getFileSha(repo: string, path: string, branch: string): string | null {
+	try {
+		const result = execSync(`gh api repos/${repo}/contents/${path}?ref=${branch} --jq '.sha'`, {
+			encoding: "utf-8",
+			stdio: ["pipe", "pipe", "pipe"],
+		});
+		return result.trim() || null;
+	} catch {
+		return null;
+	}
+}
+
 // Create or update file in repo
 function createFile(repo: string, path: string, content: string, message: string, branch: string): boolean {
 	try {
 		const base64Content = Buffer.from(content).toString("base64");
-		execSync(
-			`gh api repos/${repo}/contents/${path} -X PUT -f message="${message}" -f content="${base64Content}" -f branch="${branch}"`,
-			{ stdio: "pipe" }
-		);
+		
+		// Check if file already exists (need SHA for update)
+		const existingSha = getFileSha(repo, path, branch);
+		
+		const args = ["api", `repos/${repo}/contents/${path}`, "-X", "PUT", 
+			"-f", `message=${message}`, 
+			"-f", `content=${base64Content}`, 
+			"-f", `branch=${branch}`];
+		
+		if (existingSha) {
+			args.push("-f", `sha=${existingSha}`);
+		}
+		
+		const result = spawnSync("gh", args, {
+			encoding: "utf-8",
+			stdio: ["pipe", "pipe", "pipe"],
+		});
+		
+		if (result.status !== 0) {
+			console.error(result.stderr);
+			return false;
+		}
 		return true;
 	} catch (error) {
 		if (error instanceof Error && "stderr" in error) {
@@ -234,10 +265,16 @@ function createFile(repo: string, path: string, content: string, message: string
 // Create PR
 function createPR(repo: string, head: string, base: string, title: string, body: string): string | null {
 	try {
-		const result = execSync(`gh pr create -R ${repo} -H ${head} -B ${base} -t "${title}" -b "${body}"`, {
+		// Use spawnSync with -F - to read body from stdin (avoids shell escaping issues)
+		const result = spawnSync("gh", ["pr", "create", "-R", repo, "-H", head, "-B", base, "-t", title, "-F", "-"], {
+			input: body,
 			encoding: "utf-8",
 		});
-		return result.trim();
+		if (result.status !== 0) {
+			console.error(result.stderr);
+			return null;
+		}
+		return result.stdout.trim();
 	} catch {
 		return null;
 	}
