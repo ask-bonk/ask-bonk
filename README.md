@@ -4,7 +4,7 @@
   <img src="bonk_logo.png" alt="Bonk Logo" width="200">
 </p>
 
-Bonk is like Ask Jeeves, but well, for code.
+Just `/bonk` it.
 
 It's a code (and docs!) review agent that responds to mentions in issues and PRs. Built on [OpenCode](https://github.com/sst/opencode), Bonk can review code, answer questions about your codebase, and make changes directly by opening PRs and telling you where you can do better.
 
