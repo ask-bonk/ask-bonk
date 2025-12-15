@@ -40,46 +40,6 @@ Subscribe to: Issue comments, Pull request review comments, Pull request reviews
 
 Bonk runs via GitHub Actions using the [`sst/opencode/github`](https://github.com/sst/opencode) action. When you first mention Bonk, it will automatically create a PR to add the workflow file (`.github/workflows/bonk.yml`) to your repository.
 
-The generated workflow looks like this:
-
-```yaml
-name: Bonk
-
-on:
-  issue_comment:
-    types: [created]
-  pull_request_review_comment:
-    types: [created]
-  pull_request_review:
-    types: [submitted]
-
-jobs:
-  bonk:
-    if: |
-      github.event.sender.type != 'Bot' &&
-      (contains(github.event.comment.body, '@ask-bonk') || contains(github.event.comment.body, '/bonk'))
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: write
-      issues: write
-      pull-requests: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Run Bonk
-        uses: sst/opencode/github@latest
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GITHUB_TOKEN: ${{ github.token }}
-        with:
-          model: anthropic/claude-sonnet-4-20250514
-          use_github_token: true
-```
-
 ### Required Secrets
 
 Add the following secret to your repository (**Settings** > **Secrets and variables** > **Actions**):
@@ -149,25 +109,65 @@ For advanced configuration (custom providers, system prompts, etc.), create `.op
 }
 ```
 
-## Architecture
+## How Bonk Works
+
+Bonk coordinates between a Cloudflare Worker (webhook handling & coordination) and [opencode](https://opencode.ai) (in GitHub Actions). The Worker provides instant feedback while opencode does the heavy lifting in your repo's Actions environment.
+
+- **Webhook delivery**: GitHub sends comment events to both Bonk Worker and triggers the `bonk.yml` workflow
+- **Instant feedback**: Bonk acknowledges the comment and posts a brief "Starting..." comment with a link to the workflow run.
+- **AI execution**: opencode runs in GitHub Actions, reads context, calls the AI, and posts results
+- **Failure handling**: Bonk monitors the workflow and only updates its comment if something fails
+- **No duplication**: On success, opencode's responds (with comments, a new PR, or a new issue as needed).
 
 ```
-GitHub Comment (@ask-bonk)
-    │
-    ▼
-ask-bonk Worker (Cloudflare)
-    │
-    ├─► Posts "Working on it..." comment
-    │
-    ├─► Triggers GitHub Actions workflow
-    │
-    └─► Tracks workflow completion via RepoActor
-            │
-            ▼
-        Updates comment with results
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           USER COMMENTS @ask-bonk                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         GITHUB WEBHOOK DELIVERY                             │
+│                      (issue_comment.created event)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                    ┌─────────────────┴─────────────────┐
+                    │                                   │
+                    ▼                                   ▼
+┌───────────────────────────────────┐   ┌───────────────────────────────────┐
+│     BONK WORKER (Cloudflare)      │   │    GITHUB ACTIONS (bonk.yml)      │
+│                                   │   │                                   │
+│ 1. Verify webhook                 │   │ 1. Triggered by issue_comment     │
+│ 2. Check write access             │   │    event (GitHub native)          │
+│ 3. POST comment:                  │   │                                   │
+│    "Starting Bonk... [View run]"  │   │ 2. Runs: sst/opencode/github      │
+│ 4. Hand off to RepoActor          │   │                                   │
+└───────────────────────────────────┘   └───────────────────────────────────┘
+                    │                                   │
+                    │                                   ▼
+                    │                   ┌───────────────────────────────────┐
+                    │                   │      OPENCODE CLI (github.ts)     │
+                    │                   │                                   │
+                    │                   │ 1. Add 👀 reaction                │
+                    │                   │ 2. Fetch issue/PR context         │
+                    │                   │ 3. Run AI agent                   │
+                    │                   │ 4. Push changes if any            │
+                    │                   │ 5. POST comment with response     │
+                    │                   │ 6. Remove 👀 reaction             │
+                    │                   └───────────────────────────────────┘
+                    │                                   │
+                    ▼                                   ▼
+┌───────────────────────────────────┐   ┌───────────────────────────────────┐
+│   REPO ACTOR (Durable Object)     │   │       FINAL STATE                 │
+│                                   │   │                                   │
+│ Polls workflow status every 30s   │   │ Comment 1 (Bonk):                 │
+│                                   │   │   "Starting Bonk... [View run]"   │
+│ On SUCCESS: silent (OpenCode      │   │                                   │
+│             already posted)       │   │ Comment 2 (OpenCode):             │
+│                                   │   │   "<Full AI Response>             │
+│ On FAILURE/TIMEOUT: updates       │   │    [View session]"                │
+│   "Bonk workflow failed..."       │   │                                   │
+└───────────────────────────────────┘   └───────────────────────────────────┘
 ```
-
-The ask-bonk GitHub App receives webhooks and coordinates with GitHub Actions. The actual AI work happens in the `sst/opencode/github` action running in your repository's GitHub Actions environment.
 
 ## Self-Hosting
 
@@ -182,4 +182,4 @@ Required environment variables:
 
 ## License
 
-MIT
+Apache-2.0 licensed.

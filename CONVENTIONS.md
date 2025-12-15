@@ -6,3 +6,4 @@
 - Comments should focus on the _why_, not the _what_. Don't comment on short (<10 line) functions or variable declarations.
 - Prioritize comments for code that is across I/O boundaries (e.g. API calls), orchestrates external systems, or contains state.
 - Keep tests focused on user input, API calls/interface validation, and crash resistance. More tests are not better.
+- Prefer JSONC for config unless otherwise indicated or required to meet an existing dependency.
