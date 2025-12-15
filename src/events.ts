@@ -5,21 +5,17 @@ import type {
 } from "@octokit/webhooks-types";
 import type { Env, EventContext, ReviewCommentContext } from "./types";
 
-// Mention patterns
 const BOT_MENTION = "@ask-bonk";
 const BOT_COMMAND = "/bonk";
 const MENTION_PATTERN = new RegExp(`(?:^|\\s)(?:${BOT_MENTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}|${BOT_COMMAND.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})(?=$|\\s)`);
 
-// Check if a comment body contains a mention
 export function hasMention(body: string): boolean {
 	return MENTION_PATTERN.test(body.trim());
 }
 
-// Extract the prompt from comment body
 export function extractPrompt(body: string, reviewContext?: ReviewCommentContext): string {
 	const trimmed = body.trim();
 
-	// If body is just the mention/command, provide default behavior
 	if (trimmed === BOT_MENTION || trimmed === BOT_COMMAND) {
 		if (reviewContext) {
 			return `Review this code change and suggest improvements for the commented lines:\n\nFile: ${reviewContext.file}\nLines: ${reviewContext.line}\n\n${reviewContext.diffHunk}`;
@@ -27,7 +23,6 @@ export function extractPrompt(body: string, reviewContext?: ReviewCommentContext
 		return "Summarize this thread";
 	}
 
-	// Include review context if available
 	if (reviewContext) {
 		return `${trimmed}\n\nContext: You are reviewing a comment on file "${reviewContext.file}" at line ${reviewContext.line}.\n\nDiff context:\n${reviewContext.diffHunk}`;
 	}
@@ -35,7 +30,6 @@ export function extractPrompt(body: string, reviewContext?: ReviewCommentContext
 	return trimmed;
 }
 
-// Extract review comment context from PR review comment event
 export function getReviewCommentContext(
 	payload: PullRequestReviewCommentEvent
 ): ReviewCommentContext {
@@ -50,7 +44,6 @@ export function getReviewCommentContext(
 	};
 }
 
-// Check if PR is from a fork
 export function isForkPR(payload: IssueCommentEvent | PullRequestReviewCommentEvent | PullRequestReviewEvent): boolean {
 	if ("pull_request" in payload && payload.pull_request) {
 		const pr = payload.pull_request;
@@ -63,18 +56,15 @@ export function isForkPR(payload: IssueCommentEvent | PullRequestReviewCommentEv
 	return false;
 }
 
-// Parse issue_comment event
 export function parseIssueCommentEvent(payload: IssueCommentEvent): {
 	context: Omit<EventContext, "env">;
 	prompt: string;
 	triggerCommentId: number;
 } | null {
-	// Only handle created comments
 	if (payload.action !== "created") {
 		return null;
 	}
 
-	// Check for mention
 	if (!hasMention(payload.comment.body)) {
 		return null;
 	}
@@ -97,24 +87,20 @@ export function parseIssueCommentEvent(payload: IssueCommentEvent): {
 	};
 }
 
-// Parse pull_request_review_comment event
 export function parsePRReviewCommentEvent(payload: PullRequestReviewCommentEvent): {
 	context: Omit<EventContext, "env">;
 	prompt: string;
 	triggerCommentId: number;
 	reviewContext: ReviewCommentContext;
 } | null {
-	// Only handle created comments
 	if (payload.action !== "created") {
 		return null;
 	}
 
-	// Check for mention
 	if (!hasMention(payload.comment.body)) {
 		return null;
 	}
 
-	// Check for fork PR
 	if (isForkPR(payload)) {
 		return null;
 	}
@@ -141,23 +127,19 @@ export function parsePRReviewCommentEvent(payload: PullRequestReviewCommentEvent
 	};
 }
 
-// Parse pull_request_review event
 export function parsePRReviewEvent(payload: PullRequestReviewEvent): {
 	context: Omit<EventContext, "env">;
 	prompt: string;
 	triggerCommentId: number;
 } | null {
-	// Only handle submitted reviews
 	if (payload.action !== "submitted") {
 		return null;
 	}
 
-	// Check for mention in review body
 	if (!payload.review.body || !hasMention(payload.review.body)) {
 		return null;
 	}
 
-	// Check for fork PR
 	if (isForkPR(payload)) {
 		return null;
 	}
@@ -181,7 +163,6 @@ export function parsePRReviewEvent(payload: PullRequestReviewEvent): {
 	};
 }
 
-// Get model configuration from environment
 export function getModel(env: Env): { providerID: string; modelID: string } {
 	const model = env.DEFAULT_MODEL ?? "anthropic/claude-sonnet-4-20250514";
 	const [providerID, ...rest] = model.split("/");
@@ -196,7 +177,6 @@ export function getModel(env: Env): { providerID: string; modelID: string } {
 	return { providerID, modelID };
 }
 
-// Format response with optional session link
 export function formatResponse(
 	response: string,
 	changedFiles: string[] | null,
@@ -231,7 +211,6 @@ export function formatResponse(
 	return parts.join("\n");
 }
 
-// Generate branch name for new branches
 export function generateBranchName(type: "issue" | "pr", issueNumber: number): string {
 	const timestamp = new Date()
 		.toISOString()

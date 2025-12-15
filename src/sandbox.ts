@@ -47,12 +47,8 @@ export async function runOpencodeSandbox(params: SandboxParams): Promise<Sandbox
 	} = params;
 
 	const logPrefix = `[${owner}/${repo}#${issueNumber}]`;
-
-	// Create sandbox
 	const sandboxId = `${owner}-${repo}-${Date.now()}`;
 	const sandbox = getSandbox(env.Sandbox, sandboxId);
-
-	// Clone repository
 	const repoUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
 	try {
 		await sandbox.gitCheckout(repoUrl, {
@@ -64,7 +60,6 @@ export async function runOpencodeSandbox(params: SandboxParams): Promise<Sandbox
 		throw error;
 	}
 
-	// Configure git user
 	const gitConfigResult = await sandbox.exec(
 		`git config user.name "bonk[bot]" && git config user.email "bonk[bot]@users.noreply.github.com"`,
 		{ cwd: "/home/user/workspace" }
@@ -73,13 +68,11 @@ export async function runOpencodeSandbox(params: SandboxParams): Promise<Sandbox
 		console.error(`${logPrefix} Git config failed:`, gitConfigResult.stderr);
 	}
 
-	// Set up git credentials for push
 	await sandbox.exec(
 		`git config credential.helper '!f() { echo "username=x-access-token"; echo "password=${token}"; }; f'`,
 		{ cwd: "/home/user/workspace" }
 	);
 
-	// OpenCode config
 	const config: Config = {
 		provider: {
 			anthropic: {
@@ -90,7 +83,6 @@ export async function runOpencodeSandbox(params: SandboxParams): Promise<Sandbox
 		},
 	};
 
-	// Start OpenCode
 	let client: OpencodeClient;
 	try {
 		const opencode = await createOpencode<OpencodeClient>(sandbox, {
@@ -103,7 +95,6 @@ export async function runOpencodeSandbox(params: SandboxParams): Promise<Sandbox
 		throw error;
 	}
 
-	// Create session
 	const session = await client.session.create({
 		body: { title: `Bonk: ${owner}/${repo}#${issueNumber}` },
 		query: { directory: "/home/user/workspace" },
@@ -115,7 +106,6 @@ export async function runOpencodeSandbox(params: SandboxParams): Promise<Sandbox
 		throw err;
 	}
 
-	// Share session for public repos
 	let sessionLink: string | null = null;
 	if (!isPrivate) {
 		try {
@@ -129,7 +119,6 @@ export async function runOpencodeSandbox(params: SandboxParams): Promise<Sandbox
 		}
 	}
 
-	// Send prompt
 	let promptResult;
 	try {
 		promptResult = await client.session.prompt({
@@ -151,14 +140,12 @@ export async function runOpencodeSandbox(params: SandboxParams): Promise<Sandbox
 		throw error;
 	}
 
-	// Extract response
 	const parts = promptResult.data?.parts ?? [];
 	const textPart = parts.find((p: { type: string }) => p.type === "text") as
 		| { text?: string }
 		| undefined;
 	const response = textPart?.text ?? "No response";
 
-	// Check for changes
 	const statusResult = await sandbox.exec("git status --porcelain", {
 		cwd: "/home/user/workspace",
 	});
@@ -172,19 +159,15 @@ export async function runOpencodeSandbox(params: SandboxParams): Promise<Sandbox
 	let summary: string | null = null;
 
 	if (hasChanges) {
-		// Get list of changed files
 		const files = statusResult.stdout
 			.trim()
 			.split("\n")
 			.map((line: string) => line.slice(3).trim())
 			.filter((f: string) => f.length > 0);
 		changedFiles = files;
-
-		// Generate summary
 		summary = await generateSummary(client, session.data.id, response);
 
 		if (!isPullRequest) {
-			// Create new branch and push for issues
 			newBranch = generateBranchName("issue", issueNumber);
 			await sandbox.exec(`git checkout -b ${newBranch}`, {
 				cwd: "/home/user/workspace",
@@ -202,7 +185,6 @@ export async function runOpencodeSandbox(params: SandboxParams): Promise<Sandbox
 				throw new Error(`Git push failed: ${pushResult.stderr}`);
 			}
 		} else {
-			// Push to existing branch for PRs
 			await sandbox.exec("git add .", { cwd: "/home/user/workspace" });
 			await sandbox.exec(
 				`git commit -m "${summary}\n\nCo-authored-by: ${actor} <${actor}@users.noreply.github.com>"`,

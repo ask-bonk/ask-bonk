@@ -32,13 +32,10 @@ export interface WorkflowResult {
 	prUrl?: string;
 }
 
-// Mention patterns (must match events.ts)
+// Must match events.ts
 const BOT_MENTION = "@ask-bonk";
 const BOT_COMMAND = "/bonk";
 
-/**
- * Generate the workflow file content using sst/opencode/github@latest
- */
 function generateWorkflowContent(): string {
 	return `name: Bonk
 
@@ -83,10 +80,6 @@ jobs:
 }
 
 
-
-/**
- * Handle workflow mode: check for workflow file, create PR if missing, or track workflow run
- */
 export async function runWorkflowMode(
 	env: Env,
 	installationId: number,
@@ -104,8 +97,6 @@ export async function runWorkflowMode(
 	} = context;
 	const logPrefix = `[${owner}/${repo}#${issueNumber}]`;
 	const octokit = await createOctokit(env, installationId);
-
-	// Check if workflow file exists
 	const hasWorkflow = await fileExists(octokit, owner, repo, WORKFLOW_FILE_PATH);
 
 	if (!hasWorkflow) {
@@ -113,8 +104,7 @@ export async function runWorkflowMode(
 		return await createWorkflowPR(octokit, owner, repo, defaultBranch, responseCommentId);
 	}
 
-	// Workflow exists - GitHub triggers it automatically via the comment event
-	// Our job: find the run and hand off to RepoActor for completion tracking
+	// GitHub triggers workflow automatically - we find the run and track it
 	console.info(`${logPrefix} Polling for workflow run`);
 
 	const run = await findWorkflowRun(
@@ -129,17 +119,15 @@ export async function runWorkflowMode(
 
 	if (run) {
 		console.info(`${logPrefix} Found workflow run ${run.id}`);
-
-		// Update comment with workflow link
 		await updateComment(
 			octokit,
 			owner,
 			repo,
 			responseCommentId,
-			`Bonk is working on it...\n\n[View workflow run](${run.url})`
+			`Starting Bonk... [View workflow run](${run.url})`
 		);
 
-		// Hand off to RepoActor for completion tracking
+		// RepoActor handles failure/timeout - OpenCode posts success responses
 		const actorId = env.REPO_ACTOR.idFromName(`${owner}/${repo}`);
 		const actor = env.REPO_ACTOR.get(actorId);
 
@@ -152,14 +140,12 @@ export async function runWorkflowMode(
 		};
 	} else {
 		console.warn(`${logPrefix} Could not find workflow run, falling back to Actions link`);
-
-		// Fallback: link to Actions tab
 		await updateComment(
 			octokit,
 			owner,
 			repo,
 			responseCommentId,
-			`Bonk is working on it...\n\n[View Actions](https://github.com/${owner}/${repo}/actions)`
+			`Starting Bonk... [View Actions](https://github.com/${owner}/${repo}/actions)`
 		);
 
 		return {
@@ -169,9 +155,6 @@ export async function runWorkflowMode(
 	}
 }
 
-/**
- * Create a PR with the workflow file (and config if missing)
- */
 async function createWorkflowPR(
 	octokit: Octokit,
 	owner: string,
@@ -179,7 +162,6 @@ async function createWorkflowPR(
 	defaultBranch: string,
 	responseCommentId: number
 ): Promise<WorkflowResult> {
-	// Check if PR already exists
 	const existingPR = await findOpenPR(octokit, owner, repo, WORKFLOW_BRANCH);
 	if (existingPR) {
 		await updateComment(
@@ -197,21 +179,18 @@ async function createWorkflowPR(
 		};
 	}
 
-	// Get default branch SHA
 	const baseSha = await getDefaultBranchSha(octokit, owner, repo, defaultBranch);
 
-	// Create new branch
 	try {
 		await createBranch(octokit, owner, repo, WORKFLOW_BRANCH, baseSha);
 	} catch (error) {
-		// Branch might already exist from a previous closed PR
+		// Branch may exist from a previous closed PR
 		const errorMessage = error instanceof Error ? error.message : "";
 		if (!errorMessage.includes("Reference already exists")) {
 			throw error;
 		}
 	}
 
-	// Create workflow file
 	const workflowContent = generateWorkflowContent();
 	await createOrUpdateFile(
 		octokit,
@@ -223,7 +202,6 @@ async function createWorkflowPR(
 		WORKFLOW_BRANCH
 	);
 
-	// Create PR
 	const prBody = `## Summary
 
 This PR adds the Bonk GitHub Action workflow to enable \`@ask-bonk\` / \`/bonk\` mentions in issues and PRs.

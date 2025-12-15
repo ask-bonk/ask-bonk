@@ -10,7 +10,6 @@ import type {
 	PullRequestQueryResponse,
 } from "./types";
 
-// Create authenticated Octokit instance for an installation
 export async function createOctokit(
 	env: Env,
 	installationId: number
@@ -26,7 +25,6 @@ export async function createOctokit(
 	return new Octokit({ auth: token });
 }
 
-// Create authenticated GraphQL client for an installation
 export async function createGraphQL(
 	env: Env,
 	installationId: number
@@ -44,7 +42,6 @@ export async function createGraphQL(
 	});
 }
 
-// Get installation token for git operations
 export async function getInstallationToken(
 	env: Env,
 	installationId: number
@@ -59,14 +56,12 @@ export async function getInstallationToken(
 	return token;
 }
 
-// Create webhook handler
 export function createWebhooks(env: Env): Webhooks {
 	return new Webhooks({
 		secret: env.GITHUB_WEBHOOK_SECRET,
 	});
 }
 
-// Verify webhook signature and parse payload
 export async function verifyWebhook(
 	webhooks: Webhooks,
 	request: Request
@@ -88,7 +83,6 @@ export async function verifyWebhook(
 	}
 }
 
-// Check if user has write access to repository
 export async function hasWriteAccess(
 	octokit: Octokit,
 	owner: string,
@@ -108,7 +102,6 @@ export async function hasWriteAccess(
 	}
 }
 
-// Create a comment on an issue or PR
 export async function createComment(
 	octokit: Octokit,
 	owner: string,
@@ -126,7 +119,6 @@ export async function createComment(
 	return response.data.id;
 }
 
-// Update an existing comment
 export async function updateComment(
 	octokit: Octokit,
 	owner: string,
@@ -142,7 +134,6 @@ export async function updateComment(
 	});
 }
 
-// Create a pull request
 export async function createPullRequest(
 	octokit: Octokit,
 	owner: string,
@@ -166,7 +157,6 @@ export async function createPullRequest(
 	return response.data.number;
 }
 
-// Get repository info
 export async function getRepository(
 	octokit: Octokit,
 	owner: string,
@@ -176,9 +166,6 @@ export async function getRepository(
 	return response.data;
 }
 
-
-
-// Fetch issue data via GraphQL
 export async function fetchIssue(
 	gql: typeof graphql,
 	owner: string,
@@ -222,7 +209,6 @@ export async function fetchIssue(
 	return result.repository.issue;
 }
 
-// Fetch PR data via GraphQL
 export async function fetchPullRequest(
 	gql: typeof graphql,
 	owner: string,
@@ -323,7 +309,6 @@ export async function fetchPullRequest(
 	return result.repository.pullRequest;
 }
 
-// Build context prompt for an issue
 export function buildIssueContext(
 	issue: GitHubIssue,
 	excludeCommentIds: number[] = []
@@ -347,7 +332,6 @@ export function buildIssueContext(
 	].join("\n");
 }
 
-// Check if a file exists in a repository
 export async function fileExists(
 	octokit: Octokit,
 	owner: string,
@@ -363,7 +347,6 @@ export async function fileExists(
 	}
 }
 
-// Get default branch SHA
 export async function getDefaultBranchSha(
 	octokit: Octokit,
 	owner: string,
@@ -378,7 +361,6 @@ export async function getDefaultBranchSha(
 	return response.data.object.sha;
 }
 
-// Create a new branch
 export async function createBranch(
 	octokit: Octokit,
 	owner: string,
@@ -394,7 +376,6 @@ export async function createBranch(
 	});
 }
 
-// Create or update a file in a repository
 export async function createOrUpdateFile(
 	octokit: Octokit,
 	owner: string,
@@ -416,7 +397,6 @@ export async function createOrUpdateFile(
 	});
 }
 
-// Find an open PR from a specific branch
 export async function findOpenPR(
 	octokit: Octokit,
 	owner: string,
@@ -439,7 +419,6 @@ export async function findOpenPR(
 	return null;
 }
 
-// Build context prompt for a PR
 export function buildPRContext(
 	pr: GitHubPullRequest,
 	excludeCommentIds: number[] = []
@@ -492,14 +471,10 @@ export function buildPRContext(
 	].join("\n");
 }
 
-// Helper to sleep for a given duration
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Workflow run info returned from GitHub API
- */
 export interface WorkflowRunInfo {
 	id: number;
 	url: string;
@@ -507,10 +482,8 @@ export interface WorkflowRunInfo {
 	conclusion: string | null;
 }
 
-/**
- * Poll for a workflow run triggered by a specific event
- * Uses exponential backoff: 0s, 10s, 20s, 30s (total ~60s max)
- */
+// Polls for workflow run with backoff (0s, 10s, 20s, 30s) since GitHub
+// Actions takes time to queue runs after the triggering event
 export async function findWorkflowRun(
 	octokit: Octokit,
 	owner: string,
@@ -540,7 +513,6 @@ export async function findWorkflowRun(
 				per_page: 10,
 			});
 
-			// Find run matching our triggering actor
 			const run = response.data.workflow_runs.find(
 				(r) => r.triggering_actor?.login === triggeringActor
 			);
@@ -565,9 +537,6 @@ export async function findWorkflowRun(
 	return null;
 }
 
-/**
- * Get the current status of a workflow run
- */
 export async function getWorkflowRunStatus(
 	octokit: Octokit,
 	owner: string,

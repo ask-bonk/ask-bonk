@@ -1,17 +1,12 @@
 import type { ImageData } from "./types";
 
-// Extract images and files from GitHub comment body
-// Handles:
-// - <img alt="Image" src="https://github.com/user-attachments/assets/xxxx" />
-// - [api.json](https://github.com/user-attachments/files/21433810/api.json)
-// - ![Image](https://github.com/user-attachments/assets/xxxx)
+// Extracts GitHub user-attachments (images/files) from comment markdown
+// and converts them to base64 for the AI prompt
 export async function extractImages(
 	body: string,
 	accessToken: string
 ): Promise<{ processedBody: string; images: ImageData[] }> {
 	const images: ImageData[] = [];
-
-	// Find all GitHub user-attachments URLs
 	const mdMatches = [
 		...body.matchAll(
 			/!?\[.*?\]\((https:\/\/github\.com\/user-attachments\/[^)]+)\)/gi
@@ -42,15 +37,12 @@ export async function extractImages(
 		if (!url) continue;
 
 		const filename = getFilename(url);
-
-		// Download the file
 		const fileData = await downloadFile(url, accessToken);
 		if (!fileData) {
 			console.error(`Failed to download: ${url}`);
 			continue;
 		}
 
-		// Replace tag with @filename reference
 		const replacement = `@${filename}`;
 		processedBody =
 			processedBody.slice(0, start + offset) +
@@ -72,13 +64,11 @@ export async function extractImages(
 	return { processedBody, images };
 }
 
-// Extract filename from URL
 function getFilename(url: string): string {
 	const parts = url.split("/");
 	return parts[parts.length - 1] || "file";
 }
 
-// Download file from GitHub and return base64 content
 async function downloadFile(
 	url: string,
 	accessToken: string
@@ -98,8 +88,6 @@ async function downloadFile(
 		const contentType = response.headers.get("content-type") || "application/octet-stream";
 		const arrayBuffer = await response.arrayBuffer();
 		const base64 = arrayBufferToBase64(arrayBuffer);
-
-		// Determine MIME type
 		const mime = contentType.startsWith("image/") ? contentType : "text/plain";
 
 		return { mime, content: base64 };
@@ -109,7 +97,6 @@ async function downloadFile(
 	}
 }
 
-// Convert ArrayBuffer to base64
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
 	const bytes = new Uint8Array(buffer);
 	let binary = "";
@@ -119,7 +106,6 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 	return btoa(binary);
 }
 
-// Convert images to OpenCode SDK format
 export function imagesToPromptParts(
 	images: ImageData[]
 ): Array<{
