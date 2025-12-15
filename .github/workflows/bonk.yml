@@ -32,6 +32,8 @@ jobs:
       - name: Run Bonk
         uses: sst/opencode/github@latest
         env:
-          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
         with:
-          model: opencode/claude-opus-4-5
+          model: anthropic/claude-sonnet-4-20250514
+          use_github_token: true
