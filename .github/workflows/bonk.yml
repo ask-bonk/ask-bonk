@@ -30,10 +30,11 @@ jobs:
           fetch-depth: 1
 
       - name: Run Bonk
-        uses: sst/opencode/github@latest
+        uses: sst/opencode/github@dev
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
         with:
           model: anthropic/claude-opus-4-5
           use_github_token: true
+          mentions: "/bonk,@ask-bonk"
