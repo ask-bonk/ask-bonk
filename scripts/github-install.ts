@@ -362,13 +362,13 @@ async function checkAppInstallation(repo: string): Promise<boolean> {
 	}
 }
 
-// Wait for app installation with polling
-async function waitForAppInstallation(repo: string, maxRetries = 120): Promise<boolean> {
+// Wait for app installation with polling (every 10s for up to 2 mins)
+async function waitForAppInstallation(repo: string, maxRetries = 12): Promise<boolean> {
 	for (let i = 0; i < maxRetries; i++) {
 		if (await checkAppInstallation(repo)) {
 			return true;
 		}
-		await new Promise((resolve) => setTimeout(resolve, 1000));
+		await new Promise((resolve) => setTimeout(resolve, 10000));
 	}
 	return false;
 }
@@ -432,16 +432,16 @@ async function main() {
 		logSuccess('ask-bonk GitHub App is already installed');
 	} else {
 		log('The ask-bonk GitHub App needs to be installed for this repository.');
-		log(`${colors.dim}Opening browser to install the app...${colors.reset}\n`);
+		log(`\nInstall the app: ${colors.cyan}${GITHUB_APP_URL}${colors.reset}\n`);
 
 		openUrl(GITHUB_APP_URL);
 
-		logInfo('Waiting for app installation...');
+		logInfo('Waiting for app installation (checking every 10s for up to 2 mins)...');
 		const installed = await waitForAppInstallation(targetRepo);
 
 		if (!installed) {
 			logError(`App installation not detected for ${targetRepo}`);
-			log(`\nPlease install the app manually: ${GITHUB_APP_URL}`);
+			log(`\nInstall the app manually: ${GITHUB_APP_URL}`);
 			process.exit(1);
 		}
 
