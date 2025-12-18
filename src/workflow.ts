@@ -2,6 +2,7 @@ import type { Octokit } from "@octokit/rest";
 import type { Env } from "./types";
 import {
 	createOctokit,
+	createComment,
 	fileExists,
 	getDefaultBranchSha,
 	createBranch,
@@ -9,7 +10,6 @@ import {
 	createPullRequest,
 	findOpenPR,
 	findWorkflowRun,
-	updateComment,
 } from "./github";
 
 const WORKFLOW_FILE_PATH = ".github/workflows/bonk.yml";
@@ -20,7 +20,7 @@ export interface WorkflowContext {
 	repo: string;
 	issueNumber: number;
 	defaultBranch: string;
-	responseCommentId: number;
+	triggerCommentId: number;
 	triggeringActor: string;
 	eventType: string;
 	commentTimestamp: string;
@@ -90,7 +90,7 @@ export async function runWorkflowMode(
 		repo,
 		issueNumber,
 		defaultBranch,
-		responseCommentId,
+		triggerCommentId,
 		triggeringActor,
 		eventType,
 		commentTimestamp,
@@ -101,7 +101,7 @@ export async function runWorkflowMode(
 
 	if (!hasWorkflow) {
 		console.info(`${logPrefix} Workflow file not found, creating PR`);
-		return await createWorkflowPR(octokit, owner, repo, defaultBranch, responseCommentId);
+		return await createWorkflowPR(octokit, owner, repo, defaultBranch, issueNumber);
 	}
 
 	// GitHub triggers workflow automatically - we find the run and track it
@@ -119,38 +119,24 @@ export async function runWorkflowMode(
 
 	if (run) {
 		console.info(`${logPrefix} Found workflow run ${run.id}`);
-		await updateComment(
-			octokit,
-			owner,
-			repo,
-			responseCommentId,
-			`Starting Bonk... [View workflow run](${run.url})`
-		);
 
 		// RepoActor handles failure/timeout - OpenCode posts success responses
 		const actorId = env.REPO_ACTOR.idFromName(`${owner}/${repo}`);
 		const actor = env.REPO_ACTOR.get(actorId);
 
 		await actor.setInstallationId(installationId);
-		await actor.trackRun(responseCommentId, run.id, run.url, issueNumber);
+		await actor.trackRun(run.id, run.url, issueNumber);
 
 		return {
 			success: true,
 			message: `Tracking workflow run ${run.id}`,
 		};
 	} else {
-		console.warn(`${logPrefix} Could not find workflow run, falling back to Actions link`);
-		await updateComment(
-			octokit,
-			owner,
-			repo,
-			responseCommentId,
-			`Starting Bonk... [View Actions](https://github.com/${owner}/${repo}/actions)`
-		);
+		console.warn(`${logPrefix} Could not find workflow run`);
 
 		return {
 			success: true,
-			message: "Workflow triggered (run not found, linked to Actions tab)",
+			message: "Workflow triggered (run not found)",
 		};
 	}
 }
@@ -160,15 +146,15 @@ async function createWorkflowPR(
 	owner: string,
 	repo: string,
 	defaultBranch: string,
-	responseCommentId: number
+	issueNumber: number
 ): Promise<WorkflowResult> {
 	const existingPR = await findOpenPR(octokit, owner, repo, WORKFLOW_BRANCH);
 	if (existingPR) {
-		await updateComment(
+		await createComment(
 			octokit,
 			owner,
 			repo,
-			responseCommentId,
+			issueNumber,
 			`Please merge PR #${existingPR.number} first for Bonk to run workflows.\n\n${existingPR.url}`
 		);
 
@@ -242,11 +228,11 @@ Or use the slash command:
 
 	const prUrl = `https://github.com/${owner}/${repo}/pull/${prNumber}`;
 
-	await updateComment(
+	await createComment(
 		octokit,
 		owner,
 		repo,
-		responseCommentId,
+		issueNumber,
 		`I noticed the workflow file is missing. I've created a PR to add it: #${prNumber}\n\nOnce merged and configured with your \`ANTHROPIC_API_KEY\` secret, mention me again!\n\n${prUrl}`
 	);
 

@@ -1,12 +1,11 @@
 import { Actor, Persist } from '@cloudflare/actors';
 import type { Schedule } from '@cloudflare/actors/alarms';
 import type { Env } from './types';
-import { createOctokit, getWorkflowRunStatus, updateComment } from './github';
+import { createOctokit, getWorkflowRunStatus, createComment } from './github';
 
 export interface CheckStatusPayload {
 	runId: number;
 	runUrl: string;
-	commentId: number;
 	issueNumber: number;
 	createdAt: number;
 }
@@ -32,14 +31,13 @@ export class RepoActor extends Actor<Env> {
 		this.installationId = id;
 	}
 
-	async trackRun(commentId: number, runId: number, runUrl: string, issueNumber: number): Promise<void> {
+	async trackRun(runId: number, runUrl: string, issueNumber: number): Promise<void> {
 		const logPrefix = `[${this.owner}/${this.repo}]`;
-		console.info(`${logPrefix} Tracking run ${runId} for comment ${commentId}`);
+		console.info(`${logPrefix} Tracking run ${runId} for issue #${issueNumber}`);
 
 		const payload: CheckStatusPayload = {
 			runId,
 			runUrl,
-			commentId,
 			issueNumber,
 			createdAt: Date.now(),
 		};
@@ -51,14 +49,14 @@ export class RepoActor extends Actor<Env> {
 	// Called by alarms system
 	async checkWorkflowStatus(payload: CheckStatusPayload, _schedule: Schedule<CheckStatusPayload>): Promise<void> {
 		const logPrefix = `[${this.owner}/${this.repo}]`;
-		const { runId, runUrl, commentId, createdAt } = payload;
+		const { runId, runUrl, issueNumber, createdAt } = payload;
 
 		console.info(`${logPrefix} Checking status for run ${runId}`);
 
 		const elapsed = Date.now() - createdAt;
 		if (elapsed > MAX_TRACKING_TIME_MS) {
 			console.warn(`${logPrefix} Run ${runId} timed out after ${elapsed}ms`);
-			await this.updateCommentWithTimeout(runUrl, commentId);
+			await this.postTimeoutComment(runUrl, issueNumber);
 			return;
 		}
 
@@ -79,7 +77,7 @@ export class RepoActor extends Actor<Env> {
 			if (status.status === 'completed') {
 				// On success, OpenCode posts the response - we stay silent
 				if (status.conclusion !== 'success') {
-					await this.updateCommentWithFailure(runUrl, commentId, status.conclusion);
+					await this.postFailureComment(runUrl, issueNumber, status.conclusion);
 				} else {
 					console.info(`${logPrefix} Run ${runId} succeeded - OpenCode will post response`);
 				}
@@ -92,7 +90,7 @@ export class RepoActor extends Actor<Env> {
 		}
 	}
 
-	private async updateCommentWithFailure(runUrl: string, commentId: number, conclusion: string | null): Promise<void> {
+	private async postFailureComment(runUrl: string, issueNumber: number, conclusion: string | null): Promise<void> {
 		const logPrefix = `[${this.owner}/${this.repo}]`;
 
 		const statusMessage =
@@ -106,23 +104,23 @@ export class RepoActor extends Actor<Env> {
 
 		try {
 			const octokit = await createOctokit(this.env, this.installationId);
-			await updateComment(octokit, this.owner, this.repo, commentId, body);
-			console.info(`${logPrefix} Updated comment ${commentId} with failure: ${conclusion}`);
+			await createComment(octokit, this.owner, this.repo, issueNumber, body);
+			console.info(`${logPrefix} Posted failure comment for issue #${issueNumber}: ${conclusion}`);
 		} catch (error) {
-			console.error(`${logPrefix} Failed to update comment ${commentId}:`, error);
+			console.error(`${logPrefix} Failed to post failure comment for issue #${issueNumber}:`, error);
 		}
 	}
 
-	private async updateCommentWithTimeout(runUrl: string, commentId: number): Promise<void> {
+	private async postTimeoutComment(runUrl: string, issueNumber: number): Promise<void> {
 		const logPrefix = `[${this.owner}/${this.repo}]`;
 		const body = `Timed out waiting for completion. [View run](${runUrl})`;
 
 		try {
 			const octokit = await createOctokit(this.env, this.installationId);
-			await updateComment(octokit, this.owner, this.repo, commentId, body);
-			console.info(`${logPrefix} Updated comment ${commentId} with timeout`);
+			await createComment(octokit, this.owner, this.repo, issueNumber, body);
+			console.info(`${logPrefix} Posted timeout comment for issue #${issueNumber}`);
 		} catch (error) {
-			console.error(`${logPrefix} Failed to update comment ${commentId} with timeout:`, error);
+			console.error(`${logPrefix} Failed to post timeout comment for issue #${issueNumber}:`, error);
 		}
 	}
 }

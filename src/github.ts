@@ -119,6 +119,21 @@ export async function createComment(
 	return response.data.id;
 }
 
+export async function createReaction(
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	commentId: number,
+	content: "+1" | "-1" | "laugh" | "confused" | "heart" | "hooray" | "rocket" | "eyes"
+): Promise<void> {
+	await octokit.reactions.createForIssueComment({
+		owner,
+		repo,
+		comment_id: commentId,
+		content,
+	});
+}
+
 export async function updateComment(
 	octokit: Octokit,
 	owner: string,
