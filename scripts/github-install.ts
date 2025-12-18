@@ -15,12 +15,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const WORKFLOW_FILE_PATH = '.github/workflows/bonk.yml';
+const OPENCODE_CONFIG_PATH = '.opencode/opencode.jsonc';
 const WORKFLOW_BRANCH = 'bonk/add-workflow-file';
 const DEPLOY_BUTTON_URL = 'https://deploy.workers.cloudflare.com/?url=https://github.com/elithrar/ask-bonk';
 
 const DEFAULT_MODEL = 'anthropic/claude-opus-4-5';
 const BOT_MENTION = '@ask-bonk';
 const BOT_COMMAND = '/bonk';
+const DEFAULT_MENTIONS = `${BOT_COMMAND},${BOT_MENTION}`;
 
 // ANSI colors
 const colors = {
@@ -315,6 +317,18 @@ function generateWorkflowContent(): string {
 		.replace(/\{\{MODEL\}\}/g, DEFAULT_MODEL);
 }
 
+function generateOpencodeConfig(): string {
+	const instructionsPath = path.join(__dirname, 'INSTRUCTIONS.md');
+	const instructions = fs.readFileSync(instructionsPath, 'utf-8');
+
+	return `{
+  // Bonk configuration for opencode
+  // See: https://opencode.ai/docs/config
+  "instructions": ${JSON.stringify(instructions)}
+}
+`;
+}
+
 // Open URL in browser
 function openUrl(url: string): boolean {
 	try {
@@ -444,6 +458,15 @@ async function main() {
 		process.exit(1);
 	}
 	logSuccess('Workflow file created');
+
+	// Create opencode config file
+	logInfo('Creating opencode config...');
+	const opencodeConfig = generateOpencodeConfig();
+	if (!createFile(targetRepo, OPENCODE_CONFIG_PATH, opencodeConfig, 'Add opencode config with Bonk instructions', WORKFLOW_BRANCH)) {
+		logError('Failed to create opencode config');
+		process.exit(1);
+	}
+	logSuccess('Opencode config created');
 
 	// Create PR
 	logInfo('Creating pull request...');
