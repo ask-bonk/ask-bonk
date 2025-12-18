@@ -29,6 +29,11 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Run Bonk
         uses: sst/opencode/github@latest
         env:
@@ -37,3 +42,4 @@ jobs:
         with:
           model: {{MODEL}}
           use_github_token: true
+          mentions: "{{BOT_COMMAND}},{{BOT_MENTION}}"
