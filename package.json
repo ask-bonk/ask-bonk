@@ -4,7 +4,6 @@
 	"private": true,
 	"license": "Apache-2.0",
 	"scripts": {
-		"install": "bun install",
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
 		"test": "vitest",
