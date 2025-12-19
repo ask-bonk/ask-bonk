@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { IssueCommentEvent, PullRequestReviewCommentEvent, PullRequestReviewEvent } from '@octokit/webhooks-types';
+import type { IssueCommentEvent, PullRequestReviewCommentEvent } from '@octokit/webhooks-types';
 import type { BonkMode, Env } from './types';
 import {
 	createOctokit,
@@ -19,7 +19,7 @@ import {
 	createReaction,
 	type CommentType,
 } from './github';
-import { parseIssueCommentEvent, parsePRReviewCommentEvent, parsePRReviewEvent, getModel, formatResponse } from './events';
+import { parseIssueCommentEvent, parsePRReviewCommentEvent, getModel, formatResponse } from './events';
 import { extractImages } from './images';
 import { runOpencodeSandbox, type SandboxResult } from './sandbox';
 import { runWorkflowMode } from './workflow';
@@ -29,6 +29,8 @@ export { Sandbox } from '@cloudflare/sandbox';
 export { RepoActor } from './actors';
 
 const GITHUB_REPO_URL = 'https://github.com/elithrar/ask-bonk';
+
+const SUPPORTED_EVENTS = ['issue_comment', 'pull_request_review_comment'] as const;
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -119,21 +121,19 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
 	}
 
 	try {
+		if (!SUPPORTED_EVENTS.includes(event.name as (typeof SUPPORTED_EVENTS)[number])) {
+			console.error(`Unsupported event type: ${event.name}`);
+			await replyUnsupportedEvent(event.name, event.payload, env);
+			return new Response('OK', { status: 200 });
+		}
+
 		switch (event.name) {
 			case 'issue_comment':
 				await handleIssueComment(event.payload as IssueCommentEvent, env);
 				break;
-
 			case 'pull_request_review_comment':
 				await handlePRReviewComment(event.payload as PullRequestReviewCommentEvent, env);
 				break;
-
-			case 'pull_request_review':
-				await handlePRReview(event.payload as PullRequestReviewEvent, env);
-				break;
-
-			default:
-				return new Response('Event not handled', { status: 200 });
 		}
 
 		return new Response('OK', { status: 200 });
@@ -187,29 +187,31 @@ async function handlePRReviewComment(payload: PullRequestReviewCommentEvent, env
 	});
 }
 
-async function handlePRReview(payload: PullRequestReviewEvent, env: Env): Promise<void> {
-	const installationId = payload.installation?.id;
-	if (!installationId) {
-		console.error('No installation ID in payload');
-		return;
-	}
+async function replyUnsupportedEvent(eventName: string, payload: unknown, env: Env): Promise<void> {
+	const p = payload as {
+		installation?: { id?: number };
+		repository?: { owner?: { login?: string }; name?: string };
+		issue?: { number?: number };
+		pull_request?: { number?: number };
+	};
+	const installationId = p.installation?.id;
+	if (!installationId) return;
 
-	const parsed = parsePRReviewEvent(payload);
-	if (!parsed) return;
+	const owner = p.repository?.owner?.login;
+	const repo = p.repository?.name;
+	const issueNumber = p.issue?.number ?? p.pull_request?.number;
+	if (!owner || !repo || !issueNumber) return;
 
-	await processRequest({
-		env,
-		installationId,
-		context: parsed.context,
-		prompt: parsed.prompt,
-		triggerCommentId: parsed.triggerCommentId,
-		commentType: 'pull_request_review',
-		eventType: 'pull_request_review',
-		commentTimestamp: payload.review.submitted_at ?? new Date().toISOString(),
-	});
+	const octokit = await createOctokit(env, installationId);
+	const supportedList = SUPPORTED_EVENTS.map((e) => `\`${e}\``).join(', ');
+	await createComment(
+		octokit,
+		owner,
+		repo,
+		issueNumber,
+		`\`${eventName}\` events aren't currently supported by Bonk. Please ask Bonk from a supported event type: ${supportedList}.`,
+	);
 }
-
-
 
 interface ProcessRequestParams {
 	env: Env;
