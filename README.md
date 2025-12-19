@@ -17,7 +17,7 @@ It's a code (and docs!) review agent that responds to mentions in issues and PRs
 The fastest way to get started:
 
 1. Install the [ask-bonk GitHub App](https://github.com/apps/ask-bonk) on your repository
-2. Add `ANTHROPIC_API_KEY` to your repository secrets
+2. Add `OPENCODE_API_KEY` to your repository secrets
 3. Mention `@ask-bonk` or `/bonk` in any issue or PR
 
 That's it! On first mention, Bonk will create a PR to add the workflow file to your repo.
@@ -46,7 +46,7 @@ Add the following secret to your repository (**Settings** > **Secrets and variab
 
 | Secret | Description |
 |--------|-------------|
-| `ANTHROPIC_API_KEY` | Your Anthropic API key ([get one here](https://console.anthropic.com/)) |
+| `OPENCODE_API_KEY` | Your OpenCode API key ([get one here](https://opencode.ai/api-keys)) |
 
 The `GITHUB_TOKEN` is automatically provided by GitHub Actions.
 
@@ -60,7 +60,7 @@ npx tsx scripts/github-install.ts
 
 This will:
 1. Detect the target repository from your git origin
-2. Prompt for your `ANTHROPIC_API_KEY` and set it as a repository secret
+2. Prompt for your `OPENCODE_API_KEY` and set it as a repository secret
 3. Create a PR with the workflow file
 
 ## Usage

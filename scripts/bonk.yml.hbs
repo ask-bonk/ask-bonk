@@ -37,7 +37,7 @@ jobs:
       - name: Run Bonk
         uses: sst/opencode/github@latest
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         with:
           model: {{MODEL}}
           oidc_base_url: https://ask-bonk.silverlock.workers.dev/auth

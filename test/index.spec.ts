@@ -27,7 +27,7 @@ const mockEnv: Env = {
 	GITHUB_APP_ID: "123",
 	GITHUB_APP_PRIVATE_KEY: "test-key",
 	GITHUB_WEBHOOK_SECRET: "test-secret",
-	ANTHROPIC_API_KEY: "test-api-key",
+	OPENCODE_API_KEY: "test-api-key",
 	DEFAULT_MODEL: "anthropic/claude-opus-4-5",
 };
 

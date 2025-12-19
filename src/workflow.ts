@@ -34,7 +34,7 @@ export interface WorkflowResult {
 
 const BOT_MENTION = "@ask-bonk";
 const BOT_COMMAND = "/bonk";
-const DEFAULT_MODEL = "anthropic/claude-opus-4-5";
+const DEFAULT_MODEL = "opencode/claude-opus-4-5";
 
 function generateWorkflowContent(): string {
 	return workflowTemplate
@@ -170,7 +170,7 @@ After merging, ensure the following secret is set in your repository:
 
 1. Go to **Settings** > **Secrets and variables** > **Actions**
 2. Add a new repository secret:
-   - **Name**: \`ANTHROPIC_API_KEY\`
+   - **Name**: \`OPENCODE_API_KEY\`
    - **Value**: Your Anthropic API key (get one at https://console.anthropic.com/)
 
 ## Usage
@@ -205,7 +205,7 @@ Or use the slash command:
 		owner,
 		repo,
 		issueNumber,
-		`I noticed the workflow file is missing. I've created a PR to add it: #${prNumber}\n\nOnce merged and configured with your \`ANTHROPIC_API_KEY\` secret, mention me again!\n\n${prUrl}`
+		`I noticed the workflow file is missing. I've created a PR to add it: #${prNumber}\n\nOnce merged and configured with your \`OPENCODE_API_KEY\` secret, mention me again!\n\n${prUrl}`
 	);
 
 	return {

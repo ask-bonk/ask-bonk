@@ -134,19 +134,46 @@ export async function updateComment(
 	});
 }
 
-export async function createReaction(
+export type ReactionContent = "+1" | "-1" | "laugh" | "confused" | "heart" | "hooray" | "rocket" | "eyes";
+
+// Creates a reaction on an issue comment. Silently fails if the API call fails.
+export async function createReactionForIssueComment(
 	octokit: Octokit,
 	owner: string,
 	repo: string,
 	commentId: number,
-	content: "+1" | "-1" | "laugh" | "confused" | "heart" | "hooray" | "rocket" | "eyes"
+	content: ReactionContent
 ): Promise<void> {
-	await octokit.reactions.createForIssueComment({
-		owner,
-		repo,
-		comment_id: commentId,
-		content,
-	});
+	try {
+		await octokit.reactions.createForIssueComment({
+			owner,
+			repo,
+			comment_id: commentId,
+			content,
+		});
+	} catch (error) {
+		console.error(`Failed to create reaction for issue comment ${commentId}:`, error);
+	}
+}
+
+// Creates a reaction on a PR review comment (file/line comment). Silently fails if the API call fails.
+export async function createReactionForPullRequestReviewComment(
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	commentId: number,
+	content: ReactionContent
+): Promise<void> {
+	try {
+		await octokit.reactions.createForPullRequestReviewComment({
+			owner,
+			repo,
+			comment_id: commentId,
+			content,
+		});
+	} catch (error) {
+		console.error(`Failed to create reaction for PR review comment ${commentId}:`, error);
+	}
 }
 
 export async function createPullRequest(

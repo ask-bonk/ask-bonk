@@ -5,7 +5,7 @@
  * Sets up Bonk in a target repository:
  * 1. Installs the ask-bonk GitHub App
  * 2. Detects git origin to suggest target repo
- * 3. Prompts for ANTHROPIC_API_KEY
+ * 3. Prompts for OPENCODE_API_KEY
  * 4. Sets secret via gh CLI (if available)
  * 5. Creates PR with workflow file
  */
@@ -462,15 +462,15 @@ async function main() {
 	log('Bonk requires an Anthropic API key to function.');
 	log(`${colors.dim}Get one at: https://console.anthropic.com/${colors.reset}\n`);
 
-	const apiKey = await promptSecret('Enter ANTHROPIC_API_KEY');
+	const apiKey = await promptSecret('Enter OPENCODE_API_KEY');
 
 	if (!apiKey) {
-		logWarn("No API key provided. You'll need to set ANTHROPIC_API_KEY manually.");
+		logWarn("No API key provided. You'll need to set OPENCODE_API_KEY manually.");
 	} else {
 		// Set secret
 		logInfo('Setting repository secret...');
-		if (setSecret(targetRepo, 'ANTHROPIC_API_KEY', apiKey)) {
-			logSuccess('ANTHROPIC_API_KEY secret set successfully');
+		if (setSecret(targetRepo, 'OPENCODE_API_KEY', apiKey)) {
+			logSuccess('OPENCODE_API_KEY secret set successfully');
 		} else {
 			logError('Failed to set secret. You may need to set it manually.');
 			log(`\nGo to: https://github.com/${targetRepo}/settings/secrets/actions`);
@@ -528,7 +528,7 @@ This PR adds the Bonk GitHub Action workflow to enable \`@ask-bonk\` / \`/bonk\`
 ## Setup
 
 - The ask-bonk GitHub App has been installed
-${apiKey ? '- The `ANTHROPIC_API_KEY` secret has been configured' : '- **Action Required**: Set the `ANTHROPIC_API_KEY` secret in repository settings'}
+${apiKey ? '- The `OPENCODE_API_KEY` secret has been configured' : '- **Action Required**: Set the `OPENCODE_API_KEY` secret in repository settings'}
 
 ## Usage
 
@@ -568,7 +568,7 @@ Or use the slash command:
 	log(`  ${stepNum++}. Review and merge the PR`);
 
 	if (!apiKey) {
-		log(`  ${stepNum++}. Set ANTHROPIC_API_KEY in repository secrets`);
+		log(`  ${stepNum++}. Set OPENCODE_API_KEY in repository secrets`);
 	}
 
 	log(`  ${stepNum++}. Mention @ask-bonk or /bonk in an issue or PR`);

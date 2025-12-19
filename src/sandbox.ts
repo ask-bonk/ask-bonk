@@ -77,7 +77,7 @@ export async function runOpencodeSandbox(params: SandboxParams): Promise<Sandbox
 		provider: {
 			anthropic: {
 				options: {
-					apiKey: env.ANTHROPIC_API_KEY,
+					apiKey: env.OPENCODE_API_KEY,
 				},
 			},
 		},
