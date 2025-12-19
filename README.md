@@ -30,20 +30,8 @@ On first mention, Bonk will create a PR to add the workflow file to your repo.
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         with:
-          model: anthropic/claude-opus-4-5
+          model: anthropic/claude-sonnet-4-20250514
 ```
-
-## Setup
-
-### Self-Hosting
-
-To run your own instance, [create a GitHub App](https://docs.github.com/en/apps/creating-github-apps) with the following permissions:
-- Issues: Read & Write
-- Pull requests: Read & Write
-- Contents: Read & Write
-- Metadata: Read
-
-Subscribe to: Issue comments, Pull request review comments, Pull request reviews.
 
 ## Usage
 
@@ -74,7 +62,7 @@ Or use the slash command:
 |---------|-------|
 | Mention trigger | `@ask-bonk` |
 | Slash command | `/bonk` |
-| Model | `anthropic/claude-sonnet-4-20250514` |
+| Model | `opencode/claude-opus-4-5` |
 
 ### OpenCode Config
 
@@ -91,71 +79,19 @@ For advanced configuration (custom providers, system prompts, etc.), create `.op
 }
 ```
 
-## How Bonk Works
-
-Bonk coordinates between a Cloudflare Worker (webhook handling & coordination) and [opencode](https://opencode.ai) (in GitHub Actions). The Worker provides instant feedback while opencode does the heavy lifting in your repo's Actions environment.
-
-- **Webhook delivery**: GitHub sends comment events to both Bonk Worker and triggers the `bonk.yml` workflow
-- **Instant feedback**: Bonk acknowledges the comment and posts a brief "Starting..." comment with a link to the workflow run.
-- **AI execution**: opencode runs in GitHub Actions, reads context, calls the AI, and posts results
-- **Failure handling**: Bonk monitors the workflow and only updates its comment if something fails
-- **No duplication**: On success, opencode's responds (with comments, a new PR, or a new issue as needed).
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           USER COMMENTS @ask-bonk                           │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         GITHUB WEBHOOK DELIVERY                             │
-│                      (issue_comment.created event)                          │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                    ┌─────────────────┴─────────────────┐
-                    │                                   │
-                    ▼                                   ▼
-┌───────────────────────────────────┐   ┌───────────────────────────────────┐
-│     BONK WORKER (Cloudflare)      │   │    GITHUB ACTIONS (bonk.yml)      │
-│                                   │   │                                   │
-│ 1. Verify webhook                 │   │ 1. Triggered by issue_comment     │
-│ 2. Check write access             │   │    event (GitHub native)          │
-│ 3. POST comment:                  │   │                                   │
-│    "Starting Bonk... [View run]"  │   │ 2. Runs: sst/opencode/github      │
-│ 4. Hand off to RepoActor          │   │                                   │
-└───────────────────────────────────┘   └───────────────────────────────────┘
-                    │                                   │
-                    │                                   ▼
-                    │                   ┌───────────────────────────────────┐
-                    │                   │      OPENCODE CLI (github.ts)     │
-                    │                   │                                   │
-                    │                   │ 1. Add 👀 reaction                │
-                    │                   │ 2. Fetch issue/PR context         │
-                    │                   │ 3. Run AI agent                   │
-                    │                   │ 4. Push changes if any            │
-                    │                   │ 5. POST comment with response     │
-                    │                   │ 6. Remove 👀 reaction             │
-                    │                   └───────────────────────────────────┘
-                    │                                   │
-                    ▼                                   ▼
-┌───────────────────────────────────┐   ┌───────────────────────────────────┐
-│   REPO ACTOR (Durable Object)     │   │       FINAL STATE                 │
-│                                   │   │                                   │
-│ Polls workflow status every 30s   │   │ Comment 1 (Bonk):                 │
-│                                   │   │   "Starting Bonk... [View run]"   │
-│ On SUCCESS: silent (OpenCode      │   │                                   │
-│             already posted)       │   │ Comment 2 (OpenCode):             │
-│                                   │   │   "<Full AI Response>             │
-│ On FAILURE/TIMEOUT: updates       │   │    [View session]"                │
-│   "Bonk workflow failed..."       │   │                                   │
-└───────────────────────────────────┘   └───────────────────────────────────┘
-```
-
 ## Self-Hosting
 
 Deploy your own Bonk instance to Cloudflare Workers:
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/elithrar/ask-bonk)
+
+You'll need to [create a GitHub App](https://docs.github.com/en/apps/creating-github-apps) with the following permissions:
+- Issues: Read & Write
+- Pull requests: Read & Write
+- Contents: Read & Write
+- Metadata: Read
+
+Subscribe to: Issue comments, Pull request review comments, Pull request reviews.
 
 Required environment variables:
 - `GITHUB_APP_ID` - Your GitHub App ID
