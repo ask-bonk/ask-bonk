@@ -16,8 +16,8 @@ import {
 	buildIssueContext,
 	buildPRContext,
 	getInstallationToken,
-	createReactionForIssueComment,
-	createReactionForPullRequestReviewComment,
+	createReaction,
+	type CommentType,
 } from './github';
 import { parseIssueCommentEvent, parsePRReviewCommentEvent, parsePRReviewEvent, getModel, formatResponse } from './events';
 import { extractImages } from './images';
@@ -209,7 +209,7 @@ async function handlePRReview(payload: PullRequestReviewEvent, env: Env): Promis
 	});
 }
 
-type CommentType = 'issue_comment' | 'pull_request_review_comment' | 'pull_request_review';
+
 
 interface ProcessRequestParams {
 	env: Env;
@@ -258,13 +258,8 @@ async function processRequest({
 		return;
 	}
 
-	// Add thumbs up reaction to acknowledge the request - use the correct API for the comment type
-	if (commentType === 'pull_request_review_comment') {
-		await createReactionForPullRequestReviewComment(octokit, context.owner, context.repo, triggerCommentId, '+1');
-	} else {
-		// issue_comment and pull_request_review both use the issue comment reaction API
-		await createReactionForIssueComment(octokit, context.owner, context.repo, triggerCommentId, '+1');
-	}
+	// Add thumbs up reaction to acknowledge the request
+	await createReaction(octokit, context.owner, context.repo, triggerCommentId, '+1', commentType);
 
 	if (mode === 'github_workflow') {
 		// Workflow mode: only react, don't comment unless there's a failure
