@@ -138,7 +138,8 @@ export type ReactionContent = "+1" | "-1" | "laugh" | "confused" | "heart" | "ho
 export type CommentType = "issue_comment" | "pull_request_review_comment" | "pull_request_review";
 
 // Creates a reaction on a comment. Silently fails if the API call fails.
-// issue_comment and pull_request_review use the same API, while pull_request_review_comment uses a different one.
+// issue_comment uses the issue comment reactions API, pull_request_review_comment uses the PR review comment API.
+// pull_request_review (the overall review, not inline comments) does NOT support reactions via the REST API, so we skip it.
 export async function createReaction(
 	octokit: Octokit,
 	owner: string,
@@ -148,6 +149,12 @@ export async function createReaction(
 	commentType: CommentType
 ): Promise<void> {
 	try {
+		if (commentType === "pull_request_review") {
+			// PR reviews (the overall review submission) don't support reactions via REST API
+			console.info(`Skipping reaction for pull_request_review ${commentId} - not supported by GitHub API`);
+			return;
+		}
+
 		if (commentType === "pull_request_review_comment") {
 			await octokit.reactions.createForPullRequestReviewComment({
 				owner,
