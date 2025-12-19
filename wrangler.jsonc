@@ -3,6 +3,13 @@
 	"name": "ask-bonk",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-12-11",
+	"rules": [
+		{
+			"type": "Text",
+			"globs": ["**/*.hbs"],
+			"fallthrough": true,
+		},
+	],
 	"compatibility_flags": ["nodejs_compat"],
 	"observability": {
 		"enabled": true,

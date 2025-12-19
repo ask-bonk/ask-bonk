@@ -11,6 +11,7 @@ import {
 	findOpenPR,
 	findWorkflowRun,
 } from "./github";
+import workflowTemplate from "../scripts/bonk.yml.hbs";
 
 const WORKFLOW_FILE_PATH = ".github/workflows/bonk.yml";
 const WORKFLOW_BRANCH = "bonk/add-workflow-file";
@@ -31,59 +32,15 @@ export interface WorkflowResult {
 	prUrl?: string;
 }
 
-// Shared workflow configuration - keep in sync with scripts/bonk.yml.hbs
 const BOT_MENTION = "@ask-bonk";
 const BOT_COMMAND = "/bonk";
 const DEFAULT_MODEL = "anthropic/claude-opus-4-5";
-const OIDC_BASE_URL = "https://ask-bonk.silverlock.workers.dev/auth";
 
-// Template mirrors scripts/bonk.yml.hbs - this is the OIDC-based workflow
 function generateWorkflowContent(): string {
-	return `name: Bonk
-
-on:
-  issue_comment:
-    types: [created]
-  pull_request_review_comment:
-    types: [created]
-  pull_request_review:
-    types: [submitted]
-
-jobs:
-  bonk:
-    if: |
-      github.event.sender.type != 'Bot' &&
-      (
-        (github.event_name == 'issue_comment' && (contains(github.event.comment.body, '${BOT_MENTION}') || contains(github.event.comment.body, '${BOT_COMMAND}'))) ||
-        (github.event_name == 'pull_request_review_comment' && (contains(github.event.comment.body, '${BOT_MENTION}') || contains(github.event.comment.body, '${BOT_COMMAND}'))) ||
-        (github.event_name == 'pull_request_review' && (contains(github.event.review.body, '${BOT_MENTION}') || contains(github.event.review.body, '${BOT_COMMAND}')))
-      )
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-      issues: read
-      pull-requests: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Configure Git
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Run Bonk
-        uses: sst/opencode/github@latest
-        env:
-          ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}
-        with:
-          model: ${DEFAULT_MODEL}
-          oidc_base_url: ${OIDC_BASE_URL}
-          mentions: "${BOT_COMMAND},${BOT_MENTION}"
-`;
+	return workflowTemplate
+		.replace(/\{\{BOT_MENTION\}\}/g, BOT_MENTION)
+		.replace(/\{\{BOT_COMMAND\}\}/g, BOT_COMMAND)
+		.replace(/\{\{MODEL\}\}/g, DEFAULT_MODEL);
 }
 
 
