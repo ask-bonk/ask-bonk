@@ -1,8 +1,12 @@
 import { Octokit } from '@octokit/rest';
+import { retry } from '@octokit/plugin-retry';
+import { throttling } from '@octokit/plugin-throttling';
 import { createAppAuth } from '@octokit/auth-app';
 import { Webhooks } from '@octokit/webhooks';
 import { graphql } from '@octokit/graphql';
 import type { Env, GitHubIssue, GitHubPullRequest, IssueQueryResponse, PullRequestQueryResponse } from './types';
+
+const ResilientOctokit = Octokit.plugin(retry, throttling);
 
 export async function createOctokit(env: Env, installationId: number): Promise<Octokit> {
 	const auth = createAppAuth({
@@ -13,7 +17,26 @@ export async function createOctokit(env: Env, installationId: number): Promise<O
 
 	const { token } = await auth({ type: 'installation' });
 
-	return new Octokit({ auth: token });
+	return new ResilientOctokit({
+		auth: token,
+		retry: {
+			retries: 3,
+			retryAfterBaseValue: 2000, // 2s base → delays of 2s, 8s, 18s via quadratic backoff
+			doNotRetry: [400, 401, 403, 404, 422, 429], // don't retry client errors; 429 handled by throttling
+		},
+		throttle: {
+			onRateLimit: (retryAfter, options, octokit, retryCount) => {
+				octokit.log.warn(`Rate limit hit for ${options.method} ${options.url}`);
+				if (retryCount < 2) {
+					octokit.log.info(`Retrying after ${retryAfter}s`);
+					return true;
+				}
+			},
+			onSecondaryRateLimit: (retryAfter, options, octokit) => {
+				octokit.log.warn(`Secondary rate limit for ${options.method} ${options.url}`);
+			},
+		},
+	});
 }
 
 export async function createGraphQL(env: Env, installationId: number): Promise<typeof graphql> {
