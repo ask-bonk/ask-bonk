@@ -38,18 +38,28 @@
 				"class_name": "Sandbox",
 				"name": "Sandbox",
 			},
+			{
+				"class_name": "RepoAgent",
+				"name": "REPO_AGENT",
+			},
 		],
 	},
 	"migrations": [
 		{
-			"new_sqlite_classes": ["Sandbox", "RepoAgent"],
 			"tag": "v1",
+			"new_sqlite_classes": ["Sandbox"],
 		},
-	],
-	"agents": [
 		{
-			"name": "REPO_AGENT",
-			"class_name": "RepoAgent",
+			"tag": "v2",
+			"new_sqlite_classes": ["RepoActor"],
+		},
+		{
+			"tag": "v3",
+			"deleted_classes": ["RepoActor"],
+		},
+		{
+			"tag": "v4",
+			"new_sqlite_classes": ["RepoAgent"],
 		},
 	],
 	"kv_namespaces": [
