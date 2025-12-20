@@ -46,20 +46,8 @@
 	},
 	"migrations": [
 		{
-			"tag": "v1",
-			"new_sqlite_classes": ["Sandbox"],
-		},
-		{
-			"tag": "v2",
-			"new_sqlite_classes": ["RepoActor"],
-		},
-		{
-			"tag": "v3",
-			"deleted_classes": ["RepoActor"],
-		},
-		{
 			"tag": "v4",
-			"new_sqlite_classes": ["RepoAgent"],
+			"new_sqlite_classes": ["RepoAgent", "Sandbox"],
 		},
 	],
 	"kv_namespaces": [
