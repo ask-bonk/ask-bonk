@@ -63,13 +63,58 @@ Bonk can respond to the following GitHub webhook events:
 | `issue_comment` | `created` | `/bonk` or `@ask-bonk` in comment body | Responds to mentions in issue and PR comments |
 | `pull_request_review_comment` | `created` | `/bonk` or `@ask-bonk` in comment body | Responds to mentions in PR line comments (with diff context) |
 | `issues` | `opened` | New issue created | Automatically responds to newly opened issues (workflow mode only) |
-| `issues` | `edited` | Issue body edited | Only triggers if body contains `/bonk`/`@ask-bonk` OR body changed 20%+ |
 | `schedule` | — | Cron expression in workflow | Runs automated tasks on a schedule (prompt via workflow file) |
 | `workflow_dispatch` | — | Manual workflow trigger | Runs tasks manually via Actions UI (prompt via workflow file) |
 
 **Event Categories:**
 - **User-driven events** (`issue_comment`, `pull_request_review_comment`, `issues`): Triggered by user actions. Require write access check. Add reactions to acknowledge.
 - **Repo-driven events** (`schedule`, `workflow_dispatch`): Triggered by repository automation. No actor to check permissions for. Prompt comes from workflow file.
+
+#### Issue Edits
+
+By default, Bonk's workflow only triggers on newly created issues, not edits. To also respond to issue edits, add `edited` to the issues event types and add a condition to filter for significant changes:
+
+```yaml
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  bonk:
+    # Only run if: new issue OR edited with >20% body change
+    if: |
+      github.event.action == 'opened' ||
+      (github.event.action == 'edited' && github.event.changes.body)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check significant change
+        if: github.event.action == 'edited'
+        id: check
+        run: |
+          OLD='${{ github.event.changes.body.from }}'
+          NEW='${{ github.event.issue.body }}'
+          OLD_WC=$(echo "$OLD" | wc -w)
+          NEW_WC=$(echo "$NEW" | wc -w)
+          AVG=$(( (OLD_WC + NEW_WC) / 2 ))
+          if [ "$AVG" -eq 0 ]; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          # Count common words (simple approach)
+          COMMON=$(comm -12 <(echo "$OLD" | tr ' ' '\n' | sort) <(echo "$NEW" | tr ' ' '\n' | sort) | wc -l)
+          CHANGE=$(( (AVG - COMMON) * 100 / AVG ))
+          echo "Change: $CHANGE%"
+          if [ "$CHANGE" -lt 20 ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Bonk
+        if: steps.check.outputs.skip != 'true'
+        uses: sst/opencode/github@dev
+        # ... rest of your config
+```
 
 #### Scheduled Tasks
 

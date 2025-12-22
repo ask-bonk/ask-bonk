@@ -386,11 +386,10 @@ async function processRequest({
 // defines the prompt via the `prompt` input and uses `default_agent` for a custom agent.
 //
 // Supported actions:
-// - opened: New issue created - always processed
-// - edited: Issue edited - only processed if body changed significantly (threshold %+) or has mention
+// - opened: New issue created
+// - edited: Issue edited - filtering is handled by the workflow
 async function handleIssuesEvent(payload: IssuesEvent, env: Env, installationId: number): Promise<void> {
-	const editedThreshold = parseInt(env.EDITED_ISSUE_RUN_THRESHOLD_PC ?? "20", 10);
-	const parsed = parseIssuesEvent(payload, editedThreshold);
+	const parsed = parseIssuesEvent(payload);
 	if (!parsed) return;
 
 	const logPrefix = `[${parsed.context.owner}/${parsed.context.repo}#${parsed.context.issueNumber}]`;

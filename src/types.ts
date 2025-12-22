@@ -17,7 +17,6 @@ export interface Env {
 	GITHUB_WEBHOOK_SECRET: string;
 	OPENCODE_API_KEY: string;
 	DEFAULT_MODEL?: string;
-	EDITED_ISSUE_RUN_THRESHOLD_PC?: string;
 	// Shared secret for /ask endpoint - empty means endpoint is disabled
 	ASK_SECRET?: string;
 }

@@ -19,8 +19,6 @@
 		},
 	},
 	"vars": {
-		// Threshold (%) for issues:edited events - edits below this % change are ignored
-		"EDITED_ISSUE_RUN_THRESHOLD_PC": "20",
 		// Default model for OpenCode sessions
 		"DEFAULT_MODEL": "opencode/claude-opus-4-5",
 		// ASK_SECRET: Set via wrangler secret for production
