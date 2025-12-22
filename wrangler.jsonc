@@ -56,14 +56,14 @@
 			"id": "03ef4765c3824caf9fb9b8ac31584f38",
 		},
 	],
-	// Rate limiter for issues events from non-write users: 5 requests per 10 minutes
-	"rate_limits": [
+	// Rate limiter for issues events from non-write users: 5 requests per minute
+	"ratelimits": [
 		{
-			"binding": "RATE_LIMITER",
+			"name": "RATE_LIMITER",
 			"namespace_id": "1001",
 			"simple": {
 				"limit": 5,
-				"period": 600,
+				"period": 60,
 			},
 		},
 	],
