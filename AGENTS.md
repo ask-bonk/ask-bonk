@@ -1,81 +1,45 @@
 # AGENTS.md
 
-This file provides guidance to AI coding agents working on ask-bonk.
+GitHub code review bot built on Cloudflare Workers + Hono + TypeScript. Use `bun` only.
 
-## Project Overview
+## Architecture
 
-ask-bonk is a GitHub code review bot built on OpenCode. It responds to `/bonk` or `@ask-bonk` mentions in issues and PRs, running in a Cloudflare Workers environment with Durable Objects.
+This is a **Cloudflare Workers** application. Code runs on the edge, not Node.js. Key constraints:
+- No filesystem access (env vars available via `process.env` with nodejs_compat)
+- Use Workers-compatible APIs (Fetch, Web Crypto, etc.)
+- Durable Objects for stateful coordination (`RepoAgent` in `agent.ts`)
 
-## Package Manager
+### Operation Modes
 
-**Use `bun` for all package management and script execution.**
+**`/webhooks` - GitHub Actions Mode**: Webhook events trigger GitHub Actions workflows. OpenCode runs *inside the workflow*, not in Bonk's infrastructure. The `RepoAgent` Durable Object tracks workflow run status and posts failure comments.
 
-- Install dependencies: `bun install`
-- Run tests: `bun run test` (vitest)
-- Type check: `bun run tsc --noEmit`
-- Deploy: `bun run deploy` (wrangler)
+**`/ask` - Direct Sandbox Mode**: Runs OpenCode directly in Cloudflare Sandbox for programmatic API access. Requires bearer auth (`ASK_SECRET`). Returns SSE stream.
 
-Do NOT use npm, yarn, or pnpm.
+### Key Files
+- `index.ts` - Hono app entry, webhook handling, request routing
+- `github.ts` - GitHub API (Octokit with retry plugin, GraphQL for context fetching)
+- `sandbox.ts` - Cloudflare Sandbox + OpenCode SDK
+- `workflow.ts` - GitHub Actions workflow mode (creates workflow PRs, tracks runs)
+- `agent.ts` - RepoAgent Durable Object for tracking workflow runs
+- `events.ts` - Webhook event parsing and response formatting
 
-## Tech Stack
+## Commands
+- `bun install` - Install dependencies
+- `bun run test` - Run all tests (vitest)
+- `bun run test -- src/events` - Run single test file
+- `bun run tsc --noEmit` - Type check
+- `bun run deploy` - Deploy (wrangler)
 
-- Runtime: Cloudflare Workers
-- Framework: Hono
-- Language: TypeScript
-- Testing: Vitest with `@cloudflare/vitest-pool-workers`
-- GitHub API: Octokit (REST and GraphQL)
-- Sandbox: `@cloudflare/sandbox` for OpenCode execution
+## Code Style
+- **Imports**: Group by external packages, then local modules. Use `type` imports for types only.
+- **Types**: Strict mode enabled. Define types in `types.ts`, use explicit return types for exported functions.
+- **Naming**: camelCase for functions/variables, PascalCase for types/classes. Prefix interfaces with descriptive nouns.
+- **Formatting**: Tabs for indentation. No trailing semicolons in imports.
+- **Error handling**: Use try/catch for async operations, return early on validation failures.
 
-## Project Structure
-
-```
-src/
-  index.ts      # Hono app entry, webhook handling, request routing
-  github.ts     # GitHub API interactions (Octokit, GraphQL queries)
-  sandbox.ts    # Cloudflare Sandbox + OpenCode SDK integration
-  events.ts     # Webhook event parsing and response formatting
-  workflow.ts   # GitHub Actions workflow mode (creates workflow PRs, tracks runs)
-  oidc.ts       # OIDC token exchange for GitHub Actions
-  agent.ts      # RepoAgent Durable Object for tracking workflow runs
-  images.ts     # Image extraction from comments
-  types.ts      # TypeScript type definitions
-test/
-  index.spec.ts # Main test file
-  fixtures/     # JSON fixtures for webhook payloads
-scripts/
-  github-install.ts  # GitHub App installation script
-  bonk.yml.hbs       # Handlebars template for workflow file generation
-  INSTRUCTIONS.md    # Instructions for GitHub Actions workflow mode
-```
-
-## Code Conventions
-
-1. Keep related functionality together - avoid excessive file splitting
-2. External API functions (GitHub, Sandbox) stay in their respective files
-3. Comments explain "why", not "what" - skip comments on short functions
-4. Prefer JSONC for configuration files
-5. Minimize new dependencies
-
-## Testing
-
-Run tests with `bun run test`. Tests focus on:
-- Webhook event parsing and validation
-- API interface correctness
-- Error handling and crash resistance
-
-## Key Patterns
-
-- Octokit uses the retry plugin for automatic 5xx error retry
-- GraphQL is used for fetching issue/PR context with comments
-- Webhook signature verification via `@octokit/webhooks`
-- Sandbox executes OpenCode in isolated environment with git access
-
-## Operation Modes
-
-The bot has two endpoints with different execution models:
-
-### `/webhooks` - GitHub Actions Workflow Mode
-All webhook events (issue comments, PR review comments, issues, schedule, workflow_dispatch) trigger GitHub Actions workflows. OpenCode runs inside the workflow, not in Bonk's infrastructure. The RepoAgent Durable Object tracks workflow run status and posts failure comments if needed.
-
-### `/ask` - Direct Sandbox Mode
-The `/ask` endpoint runs OpenCode directly in Cloudflare Sandbox for programmatic API access. Requires bearer auth (`ASK_SECRET`). Returns SSE stream with session events.
+## Conventions
+- Keep related code together; avoid splitting across too many files
+- Comments explain "why", not "what"; skip for short (<10 line) functions
+- External API functions stay in their respective files (`github.ts`, `sandbox.ts`)
+- Prefer JSONC for config files
+- Minimize new dependencies
