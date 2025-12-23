@@ -2,7 +2,7 @@ name: weekly deps update
 
 on:
   schedule:
-    - cron: "0 4 * * 5"  # Friday at 4AM UTC
+    - cron: "0 4 * * 2"  # Tues at 4AM UTC
   workflow_dispatch: {}
 
 jobs:
