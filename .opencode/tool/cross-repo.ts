@@ -545,36 +545,44 @@ async function execCommand(
 }
 
 // Simple shell execution helper with timeout and non-interactive mode
-// Timeout defaults to 120 seconds to match typical GitHub Actions timeouts
+// Timeout defaults to 60 seconds - shorter than GitHub Actions to catch hangs early
 async function run(
 	command: string,
-	timeoutMs: number = 120_000
+	timeoutMs: number = 60_000
 ): Promise<{ success: boolean; stdout: string; stderr: string }> {
 	try {
 		const proc = Bun.spawn(["bash", "-c", command], {
 			stdout: "pipe",
 			stderr: "pipe",
-			// CRITICAL: Set stdin to "ignore" to prevent git from waiting for credential prompts
-			// Without this, git clone can hang forever if it tries to prompt for username/password
+			// CRITICAL: Set stdin to "ignore" to prevent ANY prompting
+			// Without this, commands can hang forever waiting for input
 			stdin: "ignore",
-			// Disable git's terminal prompts - fail fast instead of waiting for input
-			// This is essential for non-interactive environments like CI/CD
+			// Kill the process if it exceeds the timeout
+			timeout: timeoutMs,
+			// Non-interactive environment settings
 			env: {
 				...process.env,
+				// Disable git's terminal prompts - fail fast instead of waiting for input
 				GIT_TERMINAL_PROMPT: "0",
-				// Also disable SSH interactive prompts
-				GIT_SSH_COMMAND: "ssh -oBatchMode=yes",
+				// Disable SSH interactive prompts
+				GIT_SSH_COMMAND: "ssh -oBatchMode=yes -oStrictHostKeyChecking=accept-new",
+				// Disable pagers that might wait for input
+				GIT_PAGER: "cat",
+				PAGER: "cat",
+				// Force non-interactive mode for various tools
+				DEBIAN_FRONTEND: "noninteractive",
+				// Disable colors/formatting that might cause issues
+				NO_COLOR: "1",
+				TERM: "dumb",
 			},
-			// Add timeout to prevent hanging forever
-			timeout: timeoutMs,
 		})
 
+		const exited = await proc.exited
 		const stdout = await new Response(proc.stdout).text()
 		const stderr = await new Response(proc.stderr).text()
-		const exitCode = await proc.exited
 
 		return {
-			success: exitCode === 0,
+			success: exited === 0,
 			stdout,
 			stderr,
 		}
