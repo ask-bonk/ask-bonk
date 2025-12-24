@@ -15,7 +15,7 @@ import {
 import type { ScheduleEventPayload, WorkflowDispatchPayload } from './types';
 import { parseIssueCommentEvent, parseIssuesEvent, parsePRReviewCommentEvent, parseScheduleEvent, parseWorkflowDispatchEvent, hasMention } from './events';
 import { runWorkflowMode } from './workflow';
-import { handleGetInstallation, handleExchangeToken, handleExchangeTokenWithPAT } from './oidc';
+import { handleGetInstallation, handleExchangeToken, handleExchangeTokenForRepo, handleExchangeTokenWithPAT } from './oidc';
 import { RepoAgent } from './agent';
 import { runAsk } from './sandbox';
 
@@ -122,6 +122,23 @@ auth.post('/exchange_github_app_token', async (c) => {
 	const authHeader = c.req.header('Authorization') ?? null;
 	const result = await handleExchangeToken(c.env, authHeader);
 
+	if ('error' in result) {
+		return c.json(result, 401);
+	}
+	return c.json(result);
+});
+
+auth.post('/exchange_github_app_token_for_repo', async (c) => {
+	const authHeader = c.req.header('Authorization');
+	let body: { owner?: string; repo?: string } = {};
+
+	try {
+		body = await c.req.json();
+	} catch {
+		return c.json({ error: 'Invalid JSON body' }, 400);
+	}
+
+	const result = await handleExchangeTokenForRepo(c.env, authHeader ?? null, body);
 	if ('error' in result) {
 		return c.json(result, 401);
 	}

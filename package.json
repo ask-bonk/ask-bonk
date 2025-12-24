@@ -17,6 +17,7 @@
 		"@octokit/plugin-throttling": "^11.0.3",
 		"@octokit/rest": "^22.0.1",
 		"@octokit/webhooks": "^14.2.0",
+		"@opencode-ai/plugin": "^1.0.190",
 		"@opencode-ai/sdk": "^1.0.190",
 		"agents": "^0.0.83",
 		"hono": "^4.11.1",

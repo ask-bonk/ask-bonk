@@ -30,12 +30,38 @@ This is a **Cloudflare Workers** application. Code runs on the edge, not Node.js
 - `bun run tsc --noEmit` - Type check
 - `bun run deploy` - Deploy (wrangler)
 
+## Dependency Management
+
+**IMPORTANT**: When adding or updating dependencies in `package.json`, you MUST also update `bun.lock`:
+1. Run `bun install` locally after modifying `package.json`
+2. Commit both `package.json` AND `bun.lock` together
+
+CI/CD uses `bun install --frozen-lockfile` which fails if the lockfile doesn't match `package.json`. This ensures reproducible builds and prevents dependency drift.
+
 ## Code Style
 - **Imports**: Group by external packages, then local modules. Use `type` imports for types only.
 - **Types**: Strict mode enabled. Define types in `types.ts`, use explicit return types for exported functions.
 - **Naming**: camelCase for functions/variables, PascalCase for types/classes. Prefix interfaces with descriptive nouns.
 - **Formatting**: Tabs for indentation. No trailing semicolons in imports.
 - **Error handling**: Use try/catch for async operations, return early on validation failures.
+
+## Testing
+
+**IMPORTANT**: Tests must verify actual implementation behavior, not just document expected structures.
+
+Do NOT write tests that:
+- Create local objects/variables and verify their own structure
+- Check string equality with hardcoded values unrelated to implementation
+- "Document" expected behavior without calling real functions
+- Stub/mock everything such that no real code paths are tested
+
+Valid tests should:
+- Call actual functions from the codebase and verify their return values
+- Test input parsing, validation, and error handling with real payloads
+- Verify API contract boundaries (request/response formats)
+- Test edge cases and failure modes
+
+Keep tests focused on: user input parsing, API interface validation, and crash resistance. More tests are not better.
 
 ## Conventions
 - Keep related code together; avoid splitting across too many files

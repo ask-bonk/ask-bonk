@@ -2,6 +2,7 @@ import { createAppAuth } from '@octokit/auth-app';
 import { Octokit } from '@octokit/rest';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
 import type { Env } from './types';
+import { hasWriteAccess } from './github';
 
 // GitHub's OIDC token issuer for Actions
 const GITHUB_ACTIONS_ISSUER = 'https://token.actions.githubusercontent.com';
@@ -97,16 +98,61 @@ async function getInstallationId(env: Env, owner: string, repo: string): Promise
 	}
 }
 
-// Generates an installation token for the GitHub App
-async function generateInstallationToken(env: Env, installationId: number): Promise<string> {
+// Options for scoped installation token generation
+interface ScopedTokenOptions {
+	// Limit token to specific repository names
+	repositoryNames?: string[];
+	// Limit token permissions (defaults to full installation permissions)
+	permissions?: {
+		contents?: 'read' | 'write';
+		issues?: 'read' | 'write';
+		pull_requests?: 'read' | 'write';
+		metadata?: 'read';
+	};
+}
+
+// Generates an installation token for the GitHub App.
+// Optionally scopes the token to specific repositories and/or permissions.
+async function generateInstallationToken(
+	env: Env,
+	installationId: number,
+	options?: ScopedTokenOptions
+): Promise<string> {
 	const auth = createAppAuth({
 		appId: env.GITHUB_APP_ID,
 		privateKey: env.GITHUB_APP_PRIVATE_KEY,
 		installationId,
 	});
 
-	const { token } = await auth({ type: 'installation' });
+	const authOptions: {
+		type: 'installation';
+		repositoryNames?: string[];
+		permissions?: ScopedTokenOptions['permissions'];
+	} = { type: 'installation' };
+
+	if (options?.repositoryNames) {
+		authOptions.repositoryNames = options.repositoryNames;
+	}
+	if (options?.permissions) {
+		authOptions.permissions = options.permissions;
+	}
+
+	const { token } = await auth(authOptions);
 	return token;
+}
+
+// Checks if an actor has write access to a repository using the app's installation token.
+// Reuses hasWriteAccess from github.ts per CONVENTIONS.md: "Keep functions related to external APIs in their respective files."
+async function checkActorWriteAccess(
+	env: Env,
+	installationId: number,
+	owner: string,
+	repo: string,
+	actor: string
+): Promise<boolean> {
+	const token = await generateInstallationToken(env, installationId);
+	const octokit = new Octokit({ auth: token });
+	return hasWriteAccess(octokit, owner, repo, actor);
 }
 
 // Response types for API endpoints
@@ -171,6 +217,77 @@ export async function handleExchangeToken(
 
 	// Generate installation token
 	const token = await generateInstallationToken(env, installationId);
+
+	return { token };
+}
+
+// Handler for POST /exchange_github_app_token_for_repo
+// Exchanges a GitHub Actions OIDC token for a GitHub App installation token on a DIFFERENT repository.
+// This enables cross-repo operations from GitHub Actions - the caller authenticates with their
+// workflow's OIDC token, but can request a token for any repo where the Bonk app is installed.
+//
+// Security controls:
+// 1. Same-org restriction: The target repo must be in the same org/user as the source repo
+// 2. Actor write access: The actor (user who triggered the workflow) must have write access to the target repo
+export async function handleExchangeTokenForRepo(
+	env: Env,
+	authHeader: string | null,
+	body: { owner?: string; repo?: string }
+): Promise<ExchangeTokenResponse | ErrorResponse> {
+	if (!authHeader?.startsWith('Bearer ')) {
+		return { error: 'Missing or invalid Authorization header' };
+	}
+
+	const oidcToken = authHeader.slice(7);
+
+	// Validate the OIDC token - this proves the caller is a legitimate GitHub Actions workflow
+	const validation = await validateGitHubOIDCToken(oidcToken);
+	if (!validation.valid || !validation.claims) {
+		return { error: validation.error || 'Invalid OIDC token' };
+	}
+
+	// Target repo must be specified in body
+	if (!body.owner || !body.repo) {
+		return { error: 'Missing owner or repo in request body' };
+	}
+
+	// Security check 1: Same-org restriction
+	// Only allow cross-repo access within the same org/user to prevent abuse
+	if (validation.claims.repository_owner !== body.owner) {
+		return {
+			error: `Cross-org access denied: workflow in ${validation.claims.repository_owner} cannot access repos in ${body.owner}`,
+		};
+	}
+
+	// Get installation ID for the TARGET repository
+	const installationId = await getInstallationId(env, body.owner, body.repo);
+	if (!installationId) {
+		return { error: `GitHub App not installed for ${body.owner}/${body.repo}` };
+	}
+
+	// Security check 2: Actor write access
+	// The actor who triggered the workflow must have write access to the target repo
+	const actor = validation.claims.actor;
+	const hasAccess = await checkActorWriteAccess(env, installationId, body.owner, body.repo, actor);
+	if (!hasAccess) {
+		return {
+			error: `Access denied: ${actor} does not have write access to ${body.owner}/${body.repo}`,
+		};
+	}
+
+	// Generate scoped installation token for the target repo only.
+	// Token is restricted to:
+	// 1. Only the target repository (not all repos the app is installed on)
+	// 2. Minimum permissions needed for cross-repo operations (contents, pull_requests, issues)
+	const token = await generateInstallationToken(env, installationId, {
+		repositoryNames: [body.repo],
+		permissions: {
+			contents: 'write', // Push commits
+			pull_requests: 'write', // Create PRs
+			issues: 'write', // Create comments
+			metadata: 'read', // Always implicitly included, but be explicit
+		},
+	});
 
 	return { token };
 }

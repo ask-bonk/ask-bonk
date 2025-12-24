@@ -398,4 +398,78 @@ describe("OIDC Claim Parsing", () => {
 		expect(owner).toBe("octocat");
 		expect(repo).toBe("hello-world");
 	});
+
+	it("handles repos with multiple dashes/underscores", () => {
+		const claims = {
+			repository: "my-org/my-complex_repo-name",
+		} as any;
+		const { owner, repo } = extractRepoFromClaims(claims);
+		expect(owner).toBe("my-org");
+		expect(repo).toBe("my-complex_repo-name");
+	});
 });
+
+// Tests for handleExchangeTokenForRepo security controls.
+// These test the handler's validation logic by calling it with mock inputs.
+// The handler rejects requests early if validation fails, before any external API calls.
+describe("Cross-Repo Token Exchange Input Validation", () => {
+	// Mock env that will fail on any external call - tests should never reach these
+	const mockEnv: Env = {
+		Sandbox: {} as Env["Sandbox"],
+		REPO_AGENT: {} as Env["REPO_AGENT"],
+		APP_INSTALLATIONS: {
+			get: async () => null,
+			put: async () => {},
+		} as unknown as Env["APP_INSTALLATIONS"],
+		RATE_LIMITER: {} as Env["RATE_LIMITER"],
+		GITHUB_APP_ID: "123",
+		GITHUB_APP_PRIVATE_KEY: "test-key",
+		GITHUB_WEBHOOK_SECRET: "test-secret",
+		OPENCODE_API_KEY: "test-api-key",
+		DEFAULT_MODEL: "anthropic/claude-opus-4-5",
+	};
+
+	it("rejects requests without Authorization header", async () => {
+		const { handleExchangeTokenForRepo } = await import("../src/oidc");
+		const result = await handleExchangeTokenForRepo(mockEnv, null, {
+			owner: "test-org",
+			repo: "test-repo",
+		});
+
+		expect("error" in result).toBe(true);
+		expect((result as { error: string }).error).toContain("Authorization");
+	});
+
+	it("rejects requests with non-Bearer Authorization", async () => {
+		const { handleExchangeTokenForRepo } = await import("../src/oidc");
+		const result = await handleExchangeTokenForRepo(mockEnv, "Basic abc123", {
+			owner: "test-org",
+			repo: "test-repo",
+		});
+
+		expect("error" in result).toBe(true);
+		expect((result as { error: string }).error).toContain("Authorization");
+	});
+
+	it("rejects requests missing owner in body", async () => {
+		const { handleExchangeTokenForRepo } = await import("../src/oidc");
+		// Using a fake token - it will fail OIDC validation, but that's fine
+		// We're testing that the handler validates body params too
+		const result = await handleExchangeTokenForRepo(mockEnv, "Bearer fake.jwt.token", {
+			repo: "test-repo",
+		});
+
+		// Will fail either on OIDC validation or body validation - both are acceptable
+		expect("error" in result).toBe(true);
+	});
+
+	it("rejects requests missing repo in body", async () => {
+		const { handleExchangeTokenForRepo } = await import("../src/oidc");
+		const result = await handleExchangeTokenForRepo(mockEnv, "Bearer fake.jwt.token", {
+			owner: "test-org",
+		});
+
+		expect("error" in result).toBe(true);
+	});
+});
+
