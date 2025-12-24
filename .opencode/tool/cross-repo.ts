@@ -34,7 +34,7 @@ Supported operations:
 - branch: Create and checkout a new branch from the default branch.
 - commit: Stage all changes and commit with a message.
 - push: Push the current branch to remote.
-- pr: Create a pull request using gh CLI.
+- pr: Create a pull request using gh CLI. IMPORTANT: Always include a meaningful PR body/description via the 'message' parameter.
 - exec: Run arbitrary shell commands in the cloned repo directory.
 
 Typical workflow:
@@ -43,7 +43,7 @@ Typical workflow:
 3. branch to create a feature branch
 4. commit your changes
 5. push the branch
-6. pr to create a pull request
+6. pr to create a pull request with a descriptive body (use message parameter with markdown formatting)
 
 Prerequisites (GitHub Actions mode):
 - The Bonk GitHub App must be installed on the target repository
@@ -72,7 +72,7 @@ Security: In GitHub Actions, the token is scoped to only the target repository w
 		message: tool.schema
 			.string()
 			.optional()
-			.describe("Commit message for 'commit' operation, or PR body for 'pr' operation"),
+			.describe("Commit message for 'commit' operation. For 'pr' operation, this is the PR body/description - include a meaningful summary of changes (use markdown with ## Summary header)."),
 		title: tool.schema.string().optional().describe("PR title for 'pr' operation"),
 		base: tool.schema.string().optional().describe("Base branch for PR (defaults to repo's default branch)"),
 		command: tool.schema.string().optional().describe("Shell command to execute for 'exec' operation"),
