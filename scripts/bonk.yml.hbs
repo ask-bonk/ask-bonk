@@ -35,16 +35,18 @@ jobs:
       pull-requests: read
     steps:
       - name: Check user permission
-        id: check-permission
-        uses: actions-cool/check-user-permission@v2
+        uses: actions/github-script@v7
         with:
-          require: write
-
-      - name: Bail if insufficient permissions
-        if: steps.check-permission.outputs.require-result == 'false'
-        run: |
-          echo "User ${{ github.actor }} does not have write permission to this repository"
-          exit 1
+          script: |
+            const { data: permissionLevel } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor
+            });
+            const permission = permissionLevel.permission;
+            if (permission !== 'admin' && permission !== 'write') {
+              core.setFailed(`User ${context.actor} does not have write permission (has: ${permission})`);
+            }
 
       - name: Checkout repository
         uses: actions/checkout@v4
