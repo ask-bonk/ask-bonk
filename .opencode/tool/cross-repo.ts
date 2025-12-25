@@ -22,9 +22,11 @@ Use this tool when you need to:
 - Open PRs in related repositories based on changes in the current repo
 - Summarize changes from the current repo and apply related changes to another repo
 
-The tool handles authentication automatically:
-- In GitHub Actions (with id-token: write): Uses Bonk's OIDC API for secure token exchange
-- Outside GitHub Actions: Uses gh CLI authentication or GH_TOKEN/GITHUB_TOKEN env var
+The tool handles authentication automatically based on execution context:
+
+**GitHub Actions**: Uses OIDC token exchange (requires id-token: write permission), falls back to GITHUB_TOKEN env var.
+**Interactive** (terminal): Uses gh CLI (supports OAuth flow), falls back to GH_TOKEN/GITHUB_TOKEN env var.
+**Non-interactive** (CI, sandbox, scripts): Uses gh CLI if authenticated, falls back to GH_TOKEN/GITHUB_TOKEN env var.
 
 Supported operations:
 - clone: Shallow clone a repo to /tmp/<owner>-<repo>. Returns the local path.
@@ -51,7 +53,7 @@ Prerequisites (GitHub Actions mode):
 - The target repo must be in the same org as the source repo
 - The actor must have write access to the target repository
 
-Prerequisites (local/other environments):
+Prerequisites (local/CI/other environments):
 - Authenticated via 'gh auth login' with appropriate permissions, or
 - GH_TOKEN/GITHUB_TOKEN env var set with appropriate permissions
 
@@ -204,100 +206,210 @@ Security: In GitHub Actions, the token is scoped to only the target repository w
 					return stringify({ success: false, error: `Unknown operation: ${args.operation}` })
 			}
 		} catch (error) {
-			console.error(`cross-repo tool error [${args.operation}]:`, error)
-			throw error
+			// Return error as a result rather than throwing - tools should be crash-resistant
+			const message = error instanceof Error ? error.message : String(error)
+			console.error(`cross-repo tool error [${args.operation}]:`, message)
+			return stringify({ success: false, error: `Unexpected error: ${message}` })
 		}
 	},
 })
 
-// Check if running in GitHub Actions
+// Execution context types for the cross-repo tool
+// Simplified to: GitHub Actions (OIDC available), Interactive (TTY), Non-interactive (everything else)
+type ExecutionContextType = "github-actions" | "interactive" | "non-interactive"
+
+interface ExecutionContext {
+	type: ExecutionContextType
+	hasOIDC: boolean
+	hasGhCli: boolean | null // null = not yet checked
+	hasGitHubToken: boolean
+}
+
+// Cache gh CLI availability to avoid repeated shell calls
+let ghCliAvailable: boolean | null = null
+
+// Check if running in GitHub Actions per GitHub docs:
+// https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables#default-environment-variables
 function isGitHubActions(): boolean {
+	// GITHUB_ACTIONS is always "true" when running in GitHub Actions
 	return process.env.GITHUB_ACTIONS === "true"
 }
 
-// Check if OIDC permissions are available
+// Check if OIDC permissions are available (requires id-token: write in workflow)
 function hasOIDCPermissions(): boolean {
 	return !!(process.env.ACTIONS_ID_TOKEN_REQUEST_URL && process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN)
 }
 
+// Check if running in an interactive terminal context
+function isInteractive(): boolean {
+	// If CI env var is set, always treat as non-interactive regardless of TTY
+	if (process.env.CI === "true") {
+		return false
+	}
+	// Check if stdin/stdout are TTYs (indicates interactive terminal)
+	return !!(process.stdin?.isTTY && process.stdout?.isTTY)
+}
+
+// Check if gh CLI is available and authenticated
+// Result is cached to avoid repeated shell calls
+async function checkGhCliAvailable(): Promise<boolean> {
+	if (ghCliAvailable !== null) {
+		return ghCliAvailable
+	}
+
+	// Check both that gh exists and that it's authenticated
+	const result = await run("gh auth status", 5_000)
+	ghCliAvailable = result.success
+	return ghCliAvailable
+}
+
+// Detect the current execution context
+// This determines which authentication strategies are available
+async function detectExecutionContext(): Promise<ExecutionContext> {
+	const env = process.env
+
+	// GitHub Actions - use GITHUB_ACTIONS per docs
+	if (isGitHubActions()) {
+		return {
+			type: "github-actions",
+			hasOIDC: hasOIDCPermissions(),
+			hasGhCli: false, // Don't use gh CLI in Actions - use OIDC or token
+			hasGitHubToken: !!(env.GH_TOKEN || env.GITHUB_TOKEN),
+		}
+	}
+
+	// Interactive terminal (TTY present and not in CI)
+	if (isInteractive()) {
+		return {
+			type: "interactive",
+			hasOIDC: false,
+			hasGhCli: await checkGhCliAvailable(),
+			hasGitHubToken: !!(env.GH_TOKEN || env.GITHUB_TOKEN),
+		}
+	}
+
+	// Non-interactive: CI systems, sandboxes, piped contexts, scripts
+	// All use the same auth strategy: gh CLI -> GH_TOKEN/GITHUB_TOKEN
+	return {
+		type: "non-interactive",
+		hasOIDC: false,
+		hasGhCli: await checkGhCliAvailable(),
+		hasGitHubToken: !!(env.GH_TOKEN || env.GITHUB_TOKEN),
+	}
+}
+
 // Try to get token from gh CLI
 async function getGhCliToken(): Promise<string | null> {
-	const result = await run("gh auth token")
+	const result = await run("gh auth token", 5_000)
 	return result.success ? result.stdout.trim() : null
 }
 
 // Get token via GitHub Actions OIDC exchange
+// Wrapped in try/catch for crash resistance - network errors return { error } instead of throwing
 async function getTokenViaOIDC(owner: string, repo: string): Promise<{ token: string } | { error: string }> {
-	const tokenUrl = process.env.ACTIONS_ID_TOKEN_REQUEST_URL
-	const tokenRequestToken = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN
+	try {
+		const tokenUrl = process.env.ACTIONS_ID_TOKEN_REQUEST_URL
+		const tokenRequestToken = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN
 
-	// Request OIDC token with custom audience for Bonk
-	const oidcUrl = `${tokenUrl}&audience=opencode-github-action`
-	const oidcResponse = await fetch(oidcUrl, {
-		headers: { Authorization: `Bearer ${tokenRequestToken}` },
-	})
+		// Request OIDC token with custom audience for Bonk
+		const oidcUrl = `${tokenUrl}&audience=opencode-github-action`
+		const oidcResponse = await fetch(oidcUrl, {
+			headers: { Authorization: `Bearer ${tokenRequestToken}` },
+		})
 
-	if (!oidcResponse.ok) {
-		return { error: `Failed to get OIDC token: ${oidcResponse.statusText}` }
-	}
-
-	const { value: oidcToken } = (await oidcResponse.json()) as { value: string }
-
-	// Exchange OIDC token for installation token via Bonk API
-	// OIDC_BASE_URL is set by the OpenCode GitHub Action from the oidc_base_url workflow input
-	// It already includes the /auth path, e.g. "https://ask-bonk.silverlock.workers.dev/auth"
-	const oidcBaseUrl = process.env.OIDC_BASE_URL
-	if (!oidcBaseUrl) {
-		return {
-			error:
-				"OIDC_BASE_URL environment variable not set. Ensure the workflow passes oidc_base_url to the OpenCode action.",
+		if (!oidcResponse.ok) {
+			return { error: `Failed to get OIDC token: ${oidcResponse.statusText}` }
 		}
-	}
-	const exchangeResponse = await fetch(`${oidcBaseUrl}/exchange_github_app_token_for_repo`, {
-		method: "POST",
-		headers: {
-			Authorization: `Bearer ${oidcToken}`,
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({ owner, repo }),
-	})
 
-	if (!exchangeResponse.ok) {
-		const errorBody = await exchangeResponse.text()
-		if (exchangeResponse.status === 401) {
+		const { value: oidcToken } = (await oidcResponse.json()) as { value: string }
+
+		// Exchange OIDC token for installation token via Bonk API
+		// OIDC_BASE_URL is set by the OpenCode GitHub Action from the oidc_base_url workflow input
+		// It already includes the /auth path, e.g. "https://ask-bonk.silverlock.workers.dev/auth"
+		const oidcBaseUrl = process.env.OIDC_BASE_URL
+		if (!oidcBaseUrl) {
 			return {
-				error: `Authentication failed for ${owner}/${repo}. Ensure the Bonk GitHub App is installed on the target repository.`,
+				error:
+					"OIDC_BASE_URL environment variable not set. Ensure the workflow passes oidc_base_url to the OpenCode action.",
 			}
 		}
-		return { error: `Failed to get installation token: ${errorBody}` }
-	}
+		const exchangeResponse = await fetch(`${oidcBaseUrl}/exchange_github_app_token_for_repo`, {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${oidcToken}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ owner, repo }),
+		})
 
-	const { token } = (await exchangeResponse.json()) as { token: string }
-	return { token }
+		if (!exchangeResponse.ok) {
+			const errorBody = await exchangeResponse.text()
+			if (exchangeResponse.status === 401) {
+				return {
+					error: `Authentication failed for ${owner}/${repo}. Ensure the Bonk GitHub App is installed on the target repository.`,
+				}
+			}
+			return { error: `Failed to get installation token: ${errorBody}` }
+		}
+
+		const { token } = (await exchangeResponse.json()) as { token: string }
+		return { token }
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		return { error: `OIDC token exchange failed: ${message}` }
+	}
 }
 
-// Get token for target repo - tries multiple auth strategies
+// Get token for target repo - uses context-aware auth strategy hierarchy
+//
+// Authentication strategies by context:
+// - GitHub Actions: OIDC (preferred) -> GH_TOKEN/GITHUB_TOKEN env var
+// - Interactive/Non-interactive: gh CLI -> GH_TOKEN/GITHUB_TOKEN env var
 async function getTargetRepoToken(owner: string, repo: string): Promise<{ token: string } | { error: string }> {
-	// Strategy 1: GitHub Actions OIDC (highest priority when in Actions with permissions)
-	if (isGitHubActions() && hasOIDCPermissions()) {
-		return await getTokenViaOIDC(owner, repo)
+	const context = await detectExecutionContext()
+
+	// GitHub Actions: OIDC is strongly preferred for cross-repo access
+	if (context.type === "github-actions") {
+		if (context.hasOIDC) {
+			return await getTokenViaOIDC(owner, repo)
+		}
+		// Fall back to env token if OIDC not available (missing id-token: write)
+		if (context.hasGitHubToken) {
+			const envToken = process.env.GH_TOKEN || process.env.GITHUB_TOKEN
+			return { token: envToken! }
+		}
+		return {
+			error:
+				"In GitHub Actions but no authentication available. Add 'id-token: write' permission for OIDC, or set GITHUB_TOKEN.",
+		}
 	}
 
-	// Strategy 2: gh CLI auth (most common local setup)
-	const ghToken = await getGhCliToken()
-	if (ghToken) {
-		return { token: ghToken }
+	// Interactive and Non-interactive contexts: Try gh CLI first, then env token
+	// gh CLI is preferred because:
+	// - In interactive mode, it can trigger OAuth flow if not authenticated
+	// - It respects GH_HOST and other gh config
+	if (context.hasGhCli) {
+		const ghToken = await getGhCliToken()
+		if (ghToken) {
+			return { token: ghToken }
+		}
 	}
 
-	// Strategy 3: Environment variable token (fallback)
-	const envToken = process.env.GH_TOKEN || process.env.GITHUB_TOKEN
-	if (envToken) {
-		return { token: envToken }
+	// Fall back to environment variable token
+	if (context.hasGitHubToken) {
+		const envToken = process.env.GH_TOKEN || process.env.GITHUB_TOKEN
+		return { token: envToken! }
+	}
+
+	// Build context-specific error message
+	const contextHints: Record<ExecutionContextType, string> = {
+		"github-actions": "Add 'id-token: write' permission or set GITHUB_TOKEN.",
+		interactive: "Run 'gh auth login' to authenticate, or set GH_TOKEN/GITHUB_TOKEN.",
+		"non-interactive": "Set GH_TOKEN/GITHUB_TOKEN, or ensure 'gh auth login' was run.",
 	}
 
 	return {
-		error:
-			"No authentication available. Authenticate with 'gh auth login', set GH_TOKEN/GITHUB_TOKEN, or run in GitHub Actions with id-token: write permission.",
+		error: `No authentication available (context: ${context.type}). ${contextHints[context.type]}`,
 	}
 }
 
