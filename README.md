@@ -213,17 +213,21 @@ Optional fields:
 
 ## Config
 
-### Defaults
+Bonk is configured via your workflow file and OpenCode's config. There are no built-in defaults beyond what you specify.
 
-| Setting | Value |
-|---------|-------|
-| Mention trigger | `@ask-bonk` |
-| Slash command | `/bonk` |
-| Model | `opencode/claude-opus-4-5` |
+### Workflow Inputs
+
+| Input | Description | Required |
+|-------|-------------|----------|
+| `model` | Model to use (e.g., `opencode/claude-opus-4-5`) | Yes |
+| `mentions` | Comma-separated triggers (e.g., `/bonk,@ask-bonk`) | No |
+| `permissions` | Required permission: `admin`, `write`, `any`, or `CODEOWNERS` | No |
+| `agent` | OpenCode agent to use | No |
+| `prompt` | Custom prompt (for scheduled/dispatch workflows) | No |
 
 ### OpenCode Config
 
-For advanced configuration (custom providers, system prompts, etc.), create `.opencode/opencode.jsonc` in your repository. See [OpenCode docs](https://opencode.ai/docs/config) for all options.
+For advanced configuration (custom providers, system prompts, custom tools, etc.), create `.opencode/opencode.jsonc` in your repository. See [OpenCode docs](https://opencode.ai/docs/config) for all options.
 
 ```jsonc
 {
