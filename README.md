@@ -97,6 +97,20 @@ Or use the slash command:
 /bonk add tests for the auth module
 ```
 
+For more complex tasks, use a multi-line prompt:
+
+```
+/bonk put a plan together:
+
+- add new tests that mock our Durable Objects as per
+  https://developers.cloudflare.com/durable-objects/examples/testing-with-durable-objects/
+- ensure there is at least one test for each RPC method on the class
+- add a withRetry<T> util that can wrap any upstream GitHub API call and
+  retry up to retries: number times with a timeoutSeconds: number
+- check our error handling - call out cases where we are incorrectly catching
+  exceptions and/or not attempting to retry remote operations
+```
+
 ### Examples
 
 - `@ask-bonk review this PR` - Get a code review
