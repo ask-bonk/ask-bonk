@@ -175,12 +175,14 @@ jobs:
 
 For programmatic access, Bonk exposes an `/ask` endpoint that runs OpenCode directly in a Cloudflare Sandbox. This allows you to integrate Bonk into your own workflows, scripts, or applications without going through GitHub issues and PRs.
 
+**Requirements:**
+- The [ask-bonk GitHub App](https://github.com/apps/ask-bonk) must be installed on the target repository
+- Set a secret for bearer auth: `openssl rand -hex 32 | tee >(npx wrangler@latest secret put ASK_SECRET)`
+
 When you make a request to `/ask`:
 1. Bonk clones your repository into an isolated sandbox
 2. Runs OpenCode with your prompt against the codebase
 3. Returns the response as a Server-Sent Events (SSE) stream
-
-The endpoint requires bearer authentication and only works with repositories that have the Bonk GitHub App installed.
 
 ```bash
 curl -N https://ask-bonk.silverlock.workers.dev/ask \
@@ -248,6 +250,10 @@ Required secrets (set via `wrangler secret put`):
 - `GITHUB_WEBHOOK_SECRET` - Webhook secret for verifying GitHub requests
 
 BYO LLM keys: any [OpenCode supported provider](https://opencode.ai/docs/providers/) is, well, supported. Users provide their own API keys via repository secrets in their workflows.
+
+## Contributing
+
+This project is only slightly open to external contributions. Not all of them will be accepted, and that's OK :-)
 
 ## License
 
