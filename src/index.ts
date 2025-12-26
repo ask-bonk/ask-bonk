@@ -24,6 +24,18 @@ export { Sandbox } from '@cloudflare/sandbox';
 export { RepoAgent };
 
 const GITHUB_REPO_URL = 'https://github.com/elithrar/ask-bonk';
+const DEFAULT_ALLOWED_ORGS = 'elithrar';
+
+function getAllowedOrgs(env: Env): string[] {
+	const orgs = env.ALLOWED_ORGS ?? DEFAULT_ALLOWED_ORGS;
+	return orgs.split(',').map((o) => o.trim().toLowerCase()).filter(Boolean);
+}
+
+function isAllowedOrg(owner: string, env: Env): boolean {
+	const allowed = getAllowedOrgs(env);
+	if (allowed.length === 0) return true;
+	return allowed.includes(owner.toLowerCase());
+}
 
 // User-driven events: triggered by user actions (comments, issue creation)
 // Repo-driven events: triggered by repository automation (schedule, workflow_dispatch)
@@ -201,6 +213,14 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
 	}
 
 	try {
+		// Check if the repo owner is in the allowed list
+		const owner = repository?.owner?.login;
+		if (owner && !isAllowedOrg(owner, env)) {
+			console.info(`[${owner}] Org not in allowed list, skipping`);
+			await replyNotAllowed(event.payload, env);
+			return new Response('OK', { status: 200 });
+		}
+
 		if (!SUPPORTED_EVENTS.includes(event.name as (typeof SUPPORTED_EVENTS)[number])) {
 			console.error(`Unsupported event type: ${event.name}`);
 			await replyUnsupportedEvent(event.name, event.payload, env);
@@ -322,6 +342,39 @@ async function handleScheduleEvent(payload: ScheduleEventPayload, env: Env): Pro
 	// Schedule events don't have an actor or issue context - they are processed by the
 	// GitHub Action (sst/opencode/github) which reads the prompt from the workflow file.
 	// Bonk's webhook handler acknowledges receipt but does not process these further.
+}
+
+// Reply when a repo's org is not in the allowed list
+async function replyNotAllowed(payload: unknown, env: Env): Promise<void> {
+	const p = payload as {
+		installation?: { id?: number };
+		repository?: { owner?: { login?: string }; name?: string };
+		issue?: { number?: number };
+		pull_request?: { number?: number };
+		comment?: { body?: string };
+		review?: { body?: string };
+	};
+
+	// Only post if the event actually mentions Bonk
+	const body = p.comment?.body ?? p.review?.body ?? '';
+	if (!hasMention(body)) return;
+
+	const installationId = p.installation?.id;
+	if (!installationId) return;
+
+	const owner = p.repository?.owner?.login;
+	const repo = p.repository?.name;
+	const issueNumber = p.issue?.number ?? p.pull_request?.number;
+	if (!owner || !repo || !issueNumber) return;
+
+	const octokit = await createOctokit(env, installationId);
+	await createComment(
+		octokit,
+		owner,
+		repo,
+		issueNumber,
+		`Bonk is a slightly private bot and will only run on a handful of repos. See ${GITHUB_REPO_URL} for more information.`,
+	);
 }
 
 // Reply with helpful message when someone mentions Bonk in an unsupported event type

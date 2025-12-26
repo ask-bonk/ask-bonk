@@ -19,6 +19,8 @@ export interface Env {
 	DEFAULT_MODEL?: string;
 	// Shared secret for /ask endpoint - empty means endpoint is disabled
 	ASK_SECRET?: string;
+	// Comma-separated list of allowed orgs/users - defaults to repo owner if unset
+	ALLOWED_ORGS?: string;
 }
 
 // Request body for /ask endpoint
