@@ -12,13 +12,63 @@ It's a code (and docs!) review agent that responds to mentions in issues and PRs
 - **Make changes** - Bonk can edit files and create PRs from issues and update PRs.
 - **Fully configurable** - Supports any [model provider](https://opencode.ai/docs/providers) that OpenCode does (Anthropic, OpenAI, Google, etc.). Why reinvent the wheel when there's a perfectly round one already?
 
-## Quick Start
+## Installation
 
-1. Install the [ask-bonk GitHub App](https://github.com/apps/ask-bonk) on your repository
-2. Add `OPENCODE_API_KEY` to your repository secrets (**Settings** > **Secrets and variables** > **Actions**) - [get one here](https://opencode.ai/api-keys)
-3. Mention `@ask-bonk` or `/bonk` in any issue or PR
+### 1. Install the GitHub App
 
-On first mention, Bonk will create a PR to add the workflow file to your repo.
+Install the [ask-bonk GitHub App](https://github.com/apps/ask-bonk) on your repository.
+
+### 2. Add the Workflow File
+
+Create `.github/workflows/bonk.yml` in your repository:
+
+```yaml
+name: Bonk
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  bonk:
+    if: |
+      github.event.sender.type != 'Bot' &&
+      (contains(github.event.comment.body, '@ask-bonk') || contains(github.event.comment.body, '/bonk'))
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Run Bonk
+        uses: elithrar/ask-bonk/github@main
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        with:
+          model: "opencode/claude-opus-4-5"
+          mentions: "/bonk,@ask-bonk"
+```
+
+### 3. Add Your API Key
+
+Add `OPENCODE_API_KEY` to your repository secrets (**Settings** > **Secrets and variables** > **Actions**) - [get one here](https://opencode.ai/api-keys)
+
+### 4. Start Using Bonk
+
+Mention `@ask-bonk` or `/bonk` in any issue or PR comment.
 
 ### Using Other Providers
 
@@ -26,7 +76,7 @@ On first mention, Bonk will create a PR to add the workflow file to your repo.
 
 ```yaml
       - name: Run Bonk
-        uses: sst/opencode/github@dev
+        uses: elithrar/ask-bonk/github@main
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         with:
@@ -54,71 +104,43 @@ Or use the slash command:
 - `@ask-bonk fix the failing tests` - Let Bonk make changes and push commits
 - `/bonk add documentation for the API endpoints` - Generate documentation
 
-### Events
+### Supported Events
 
-Bonk can respond to the following GitHub webhook events:
+The default workflow triggers on `issue_comment` and `pull_request_review_comment` events. You can extend your workflow to support additional events:
 
-| Event | Action | Trigger | Description |
-|-------|--------|---------|-------------|
-| `issue_comment` | `created` | `/bonk` or `@ask-bonk` in comment body | Responds to mentions in issue and PR comments |
-| `pull_request_review_comment` | `created` | `/bonk` or `@ask-bonk` in comment body | Responds to mentions in PR line comments (with diff context) |
-| `issues` | `opened` | New issue created | Automatically responds to newly opened issues (workflow mode only) |
-| `schedule` | — | Cron expression in workflow | Runs automated tasks on a schedule (prompt via workflow file) |
-| `workflow_dispatch` | — | Manual workflow trigger | Runs tasks manually via Actions UI (prompt via workflow file) |
+| Event | Trigger | How it works |
+|-------|---------|--------------|
+| `issue_comment` | `/bonk` or `@ask-bonk` in an issue or PR comment | Bonk responds to mentions in the comment thread. Works for both issues and pull requests. |
+| `pull_request_review_comment` | `/bonk` or `@ask-bonk` in a PR line comment | Bonk responds with full diff context from the specific line being commented on. Ideal for targeted code review questions. |
+| `pull_request_review` | `/bonk` or `@ask-bonk` in a PR review body | Triggered when a review is submitted with the mention in the review body. Add `pull_request_review: types: [submitted]` to your workflow triggers. |
+| `issues` | New issue opened | Automatically responds to newly created issues. Useful for triage or auto-labeling. Requires adding `issues: types: [opened]` to triggers and removing the mention check from the job condition. |
+| `schedule` | Cron expression | Runs automated tasks on a schedule. The prompt comes from the workflow file's `prompt` input. |
+| `workflow_dispatch` | Manual trigger in Actions UI | Runs tasks on-demand via the GitHub Actions interface. |
 
-**Event Categories:**
-- **User-driven events** (`issue_comment`, `pull_request_review_comment`, `issues`): Triggered by user actions. Require write access check. Add reactions to acknowledge.
-- **Repo-driven events** (`schedule`, `workflow_dispatch`): Triggered by repository automation. No actor to check permissions for. Prompt comes from workflow file.
-
-#### Issue Edits
-
-By default, Bonk's workflow only triggers on newly created issues, not edits. To also respond to issue edits, add `edited` to the issues event types and add a condition to filter for significant changes:
+#### Adding PR Review Support
 
 ```yaml
 on:
-  issues:
-    types: [opened, edited]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
 
 jobs:
   bonk:
-    # Only run if: new issue OR edited with >20% body change
     if: |
-      github.event.action == 'opened' ||
-      (github.event.action == 'edited' && github.event.changes.body)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check significant change
-        if: github.event.action == 'edited'
-        id: check
-        run: |
-          OLD='${{ github.event.changes.body.from }}'
-          NEW='${{ github.event.issue.body }}'
-          OLD_WC=$(echo "$OLD" | wc -w)
-          NEW_WC=$(echo "$NEW" | wc -w)
-          AVG=$(( (OLD_WC + NEW_WC) / 2 ))
-          if [ "$AVG" -eq 0 ]; then
-            echo "skip=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          # Count common words (simple approach)
-          COMMON=$(comm -12 <(echo "$OLD" | tr ' ' '\n' | sort) <(echo "$NEW" | tr ' ' '\n' | sort) | wc -l)
-          CHANGE=$(( (AVG - COMMON) * 100 / AVG ))
-          echo "Change: $CHANGE%"
-          if [ "$CHANGE" -lt 20 ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Run Bonk
-        if: steps.check.outputs.skip != 'true'
-        uses: sst/opencode/github@dev
-        # ... rest of your config
+      github.event.sender.type != 'Bot' &&
+      (
+        contains(github.event.comment.body, '@ask-bonk') ||
+        contains(github.event.comment.body, '/bonk') ||
+        contains(github.event.review.body, '@ask-bonk') ||
+        contains(github.event.review.body, '/bonk')
+      )
 ```
 
 #### Scheduled Tasks
-
-Scheduled events use the `prompt` input in your workflow file:
 
 ```yaml
 on:
@@ -135,12 +157,11 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
-      - uses: sst/opencode/github@dev
+      - uses: elithrar/ask-bonk/github@main
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         with:
           model: opencode/claude-opus-4-5
-          oidc_base_url: "https://ask-bonk.silverlock.workers.dev/auth"
           prompt: |
             Update all dependencies to their latest compatible versions.
             Run tests and type-check after updating.

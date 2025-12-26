@@ -1,0 +1,215 @@
+name: "Bonk GitHub Action"
+description: "Run Bonk (OpenCode) in GitHub Actions workflows"
+branding:
+  icon: "git-pull-request"
+  color: "orange"
+
+inputs:
+  model:
+    description: "Model to use (e.g., opencode/claude-opus-4-5)"
+    required: true
+
+  agent:
+    description: "Set the agent to use for this workflow. Falls back to the default_agent if set in config, else 'build'"
+    required: false
+
+  prompt:
+    description: "Custom prompt to override the default prompt"
+    required: false
+
+  mentions:
+    description: "Comma-separated trigger phrases (e.g., '/bonk,@ask-bonk')"
+    required: false
+    default: "/bonk,@ask-bonk"
+
+  permissions:
+    description: "Required permission level: 'admin', 'write', 'any', or 'CODEOWNERS' (checks .github/CODEOWNERS)"
+    required: false
+    default: "write"
+
+  oidc_base_url:
+    description: "Base URL for OIDC token exchange"
+    required: false
+    default: "https://ask-bonk.silverlock.workers.dev"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check mentions
+      id: mentions
+      shell: bash
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        COMMENT_BODY: ${{ github.event.comment.body }}
+        REVIEW_BODY: ${{ github.event.review.body }}
+        MENTIONS: ${{ inputs.mentions }}
+      run: |
+        BODY=""
+        
+        case "$EVENT_NAME" in
+          issue_comment|pull_request_review_comment)
+            BODY="$COMMENT_BODY"
+            ;;
+          pull_request_review)
+            BODY="$REVIEW_BODY"
+            ;;
+          issues|workflow_dispatch)
+            echo "skip=false" >> $GITHUB_OUTPUT
+            exit 0
+            ;;
+          *)
+            echo "Unsupported event type: $EVENT_NAME"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+            ;;
+        esac
+        
+        IFS=',' read -ra MENTION_ARRAY <<< "$MENTIONS"
+        
+        for mention in "${MENTION_ARRAY[@]}"; do
+          mention="${mention#"${mention%%[![:space:]]*}"}"
+          mention="${mention%"${mention##*[![:space:]]}"}"
+          if [[ "$BODY" == *"$mention"* ]]; then
+            echo "Found mention: $mention"
+            echo "skip=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+        done
+        
+        echo "No matching mention found in comment"
+        echo "skip=true" >> $GITHUB_OUTPUT
+
+    - name: Check user permission
+      if: inputs.permissions != 'any' && steps.mentions.outputs.skip != 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const requiredPermission = '${{ inputs.permissions }}';
+          const actor = context.actor;
+
+          const { data: permissionLevel } = await github.rest.repos.getCollaboratorPermissionLevel({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            username: actor
+          });
+          const permission = permissionLevel.permission;
+
+          if (requiredPermission === 'CODEOWNERS') {
+            let codeownersContent = '';
+            const paths = ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'];
+
+            for (const path of paths) {
+              try {
+                const { data } = await github.rest.repos.getContent({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  path: path,
+                  ref: context.ref || 'HEAD'
+                });
+                codeownersContent = Buffer.from(data.content, 'base64').toString('utf8');
+                core.info(`Found CODEOWNERS at ${path}`);
+                break;
+              } catch (e) {
+                if (e.status !== 404) throw e;
+              }
+            }
+
+            if (!codeownersContent) {
+              core.setFailed('CODEOWNERS file not found in .github/, root, or docs/ directory');
+              return;
+            }
+
+            const owners = new Set();
+            const teamPatterns = [];
+            for (const line of codeownersContent.split('\n')) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith('#')) continue;
+              const mentions = trimmed.match(/@[\w-]+(?:\/[\w-]+)?/g) || [];
+              for (const mention of mentions) {
+                if (mention.includes('/')) {
+                  teamPatterns.push(mention.substring(1));
+                } else {
+                  owners.add(mention.substring(1).toLowerCase());
+                }
+              }
+            }
+
+            const actorLower = actor.toLowerCase();
+
+            if (owners.has(actorLower)) {
+              core.info(`User ${actor} is a code owner`);
+              return;
+            }
+
+            for (const teamPath of teamPatterns) {
+              const [org, team] = teamPath.split('/');
+              try {
+                await github.rest.teams.getMembershipForUserInOrg({
+                  org: org,
+                  team_slug: team,
+                  username: actor
+                });
+                core.info(`User ${actor} is a member of team @${teamPath}`);
+                return;
+              } catch (e) {
+                if (e.status !== 404) {
+                  core.warning(`Could not check team membership for @${teamPath}: ${e.message}`);
+                }
+              }
+            }
+
+            core.setFailed(`User ${actor} is not listed in CODEOWNERS`);
+          } else if (requiredPermission === 'admin') {
+            if (permission !== 'admin') {
+              core.setFailed(`User ${actor} does not have admin permission (has: ${permission})`);
+            }
+          } else if (requiredPermission === 'write') {
+            if (permission !== 'admin' && permission !== 'write') {
+              core.setFailed(`User ${actor} does not have write permission (has: ${permission})`);
+            }
+          } else {
+            core.setFailed(`Unknown permission level: ${requiredPermission}. Use 'admin', 'write', 'any', or 'CODEOWNERS'`);
+          }
+
+    - name: Get opencode version
+      if: steps.mentions.outputs.skip != 'true'
+      id: version
+      shell: bash
+      run: |
+        VERSION=$(curl -sf https://api.github.com/repos/sst/opencode/releases/latest | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
+        echo "version=${VERSION:-latest}" >> $GITHUB_OUTPUT
+
+    - name: Cache opencode
+      if: steps.mentions.outputs.skip != 'true'
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.opencode/bin
+        key: opencode-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
+
+    - name: Install opencode
+      if: steps.mentions.outputs.skip != 'true' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: curl -fsSL https://opencode.ai/install | bash
+
+    - name: Add opencode to PATH
+      if: steps.mentions.outputs.skip != 'true'
+      shell: bash
+      run: echo "$HOME/.opencode/bin" >> $GITHUB_PATH
+
+    - name: Run opencode
+      if: steps.mentions.outputs.skip != 'true'
+      id: opencode
+      shell: bash
+      run: |
+        set +e
+        opencode github run
+        EXIT_CODE=$?
+        echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+        exit $EXIT_CODE
+      env:
+        MODEL: ${{ inputs.model }}
+        AGENT: ${{ inputs.agent }}
+        PROMPT: ${{ inputs.prompt }}
+        MENTIONS: ${{ inputs.mentions }}
+        OIDC_BASE_URL: ${{ inputs.oidc_base_url }}

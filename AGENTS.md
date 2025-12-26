@@ -63,6 +63,9 @@ Valid tests should:
 
 Keep tests focused on: user input parsing, API interface validation, and crash resistance. More tests are not better.
 
+- Avoid unit tests that simply test language functions or methods (e.g. testing that object spread works)
+- Bias towards fewer overall tests, focusing on integration tests or stubs that test validation, state, and error handling
+
 ## Conventions
 - Keep related code together; avoid splitting across too many files
 - Comments explain "why", not "what"; skip for short (<10 line) functions

@@ -1,7 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import { getAgentByName } from "agents";
 import { DEFAULT_MODEL, type Env } from "./types";
-import type { RepoAgent } from "./agent";
 import {
 	createOctokit,
 	createComment,
@@ -11,8 +10,8 @@ import {
 	createOrUpdateFile,
 	createPullRequest,
 	findOpenPR,
-	findWorkflowRun,
 } from "./github";
+import { RepoAgent } from "./agent";
 import workflowTemplate from "../scripts/bonk.yml.hbs";
 
 const WORKFLOW_FILE_PATH = ".github/workflows/bonk.yml";
@@ -24,9 +23,7 @@ export interface WorkflowContext {
 	issueNumber: number;
 	defaultBranch: string;
 	triggeringActor: string;
-	eventType: string;
 	commentTimestamp: string;
-	// For issues:opened events, include the issue content
 	issueTitle?: string;
 	issueBody?: string;
 }
@@ -59,7 +56,6 @@ export async function runWorkflowMode(
 		issueNumber,
 		defaultBranch,
 		triggeringActor,
-		eventType,
 		commentTimestamp,
 	} = context;
 	const logPrefix = `[${owner}/${repo}#${issueNumber}]`;
@@ -71,49 +67,17 @@ export async function runWorkflowMode(
 		return await createWorkflowPR(octokit, owner, repo, issueNumber, defaultBranch);
 	}
 
-	// GitHub triggers workflow automatically - we find the run and track it
-	console.info(`${logPrefix} Polling for workflow run`);
+	// Store pending workflow in RepoAgent for workflow_run webhook to correlate
+	const agent = await getAgentByName<Env, RepoAgent>(env.REPO_AGENT, `${owner}/${repo}`);
+	await agent.setInstallationId(installationId);
+	await agent.addPendingWorkflow(triggeringActor, commentTimestamp, issueNumber);
 
-	const run = await findWorkflowRun(
-		octokit,
-		owner,
-		repo,
-		"bonk.yml",
-		eventType,
-		triggeringActor,
-		commentTimestamp
-	);
+	console.info(`${logPrefix} Stored pending workflow via RepoAgent`);
 
-	if (run) {
-		console.info(`${logPrefix} Found workflow run ${run.id}`);
-
-		// RepoAgent handles failure/timeout - OpenCode posts success responses
-		// Only creates a comment if the workflow fails
-		const agent = await getAgentByName<Env, RepoAgent>(env.REPO_AGENT, `${owner}/${repo}`);
-
-		await agent.setInstallationId(installationId);
-		await agent.trackRun(run.id, run.url, issueNumber);
-
-		return {
-			success: true,
-			message: `Tracking workflow run ${run.id}`,
-		};
-	} else {
-		// Could not find the workflow run - this is unexpected, comment to inform user
-		console.warn(`${logPrefix} Could not find workflow run`);
-		await createComment(
-			octokit,
-			owner,
-			repo,
-			issueNumber,
-			`Could not find workflow run. [View Actions](https://github.com/${owner}/${repo}/actions)`
-		);
-
-		return {
-			success: false,
-			message: "Workflow run not found",
-		};
-	}
+	return {
+		success: true,
+		message: `Workflow triggered, awaiting workflow_run event`,
+	};
 }
 
 async function createWorkflowPR(

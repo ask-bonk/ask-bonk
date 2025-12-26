@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { bearerAuth } from 'hono/bearer-auth';
 import { ulid } from 'ulid';
-import type { IssueCommentEvent, IssuesEvent, PullRequestReviewCommentEvent, WorkflowDispatchEvent } from '@octokit/webhooks-types';
+import type { IssueCommentEvent, IssuesEvent, PullRequestReviewCommentEvent, WorkflowDispatchEvent, WorkflowRunRequestedEvent } from '@octokit/webhooks-types';
 import type { Env, AskRequest } from './types';
 import {
 	createOctokit,
@@ -18,6 +18,7 @@ import { runWorkflowMode } from './workflow';
 import { handleGetInstallation, handleExchangeToken, handleExchangeTokenForRepo, handleExchangeTokenWithPAT } from './oidc';
 import { RepoAgent } from './agent';
 import { runAsk } from './sandbox';
+import { getAgentByName } from 'agents';
 
 export { Sandbox } from '@cloudflare/sandbox';
 export { RepoAgent };
@@ -26,9 +27,11 @@ const GITHUB_REPO_URL = 'https://github.com/elithrar/ask-bonk';
 
 // User-driven events: triggered by user actions (comments, issue creation)
 // Repo-driven events: triggered by repository automation (schedule, workflow_dispatch)
+// System events: triggered by GitHub itself (workflow_run)
 const USER_EVENTS = ['issue_comment', 'pull_request_review_comment', 'issues'] as const;
 const REPO_EVENTS = ['schedule', 'workflow_dispatch'] as const;
-const SUPPORTED_EVENTS = [...USER_EVENTS, ...REPO_EVENTS] as const;
+const SYSTEM_EVENTS = ['workflow_run'] as const;
+const SUPPORTED_EVENTS = [...USER_EVENTS, ...REPO_EVENTS, ...SYSTEM_EVENTS] as const;
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -206,8 +209,11 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
 
 		// Route events to appropriate handlers based on type
 		const isUserEvent = USER_EVENTS.includes(event.name as (typeof USER_EVENTS)[number]);
+		const isSystemEvent = SYSTEM_EVENTS.includes(event.name as (typeof SYSTEM_EVENTS)[number]);
 		if (isUserEvent) {
 			await handleUserEvent(event.name, event.payload, env);
+		} else if (isSystemEvent) {
+			await handleSystemEvent(event.name, event.payload, env);
 		} else {
 			await handleRepoEvent(event.name, event.payload, env);
 		}
@@ -258,6 +264,16 @@ async function handleRepoEvent(eventName: string, payload: unknown, env: Env): P
 			break;
 		case 'workflow_dispatch':
 			await handleWorkflowDispatchEvent(payload as WorkflowDispatchPayload, env);
+			break;
+	}
+}
+
+// System events: triggered by GitHub itself (workflow_run)
+// These events notify us about workflow lifecycle changes
+async function handleSystemEvent(eventName: string, payload: unknown, env: Env): Promise<void> {
+	switch (eventName) {
+		case 'workflow_run':
+			await handleWorkflowRunEvent(payload as WorkflowRunRequestedEvent, env);
 			break;
 	}
 }
@@ -382,10 +398,8 @@ async function processRequest({
 		return;
 	}
 
-	// Add thumbs up reaction to acknowledge the request
 	await createReaction(octokit, context.owner, context.repo, triggerCommentId, '+1', reactionTarget);
 
-	// Trigger GitHub Actions workflow - OpenCode runs in the workflow, not here
 	console.info(`${logPrefix} Triggering workflow for ${eventType}`);
 	await runWorkflowMode(env, installationId, {
 		owner: context.owner,
@@ -393,7 +407,6 @@ async function processRequest({
 		issueNumber: context.issueNumber,
 		defaultBranch: context.defaultBranch,
 		triggeringActor: context.actor,
-		eventType,
 		commentTimestamp,
 	});
 }
@@ -423,7 +436,6 @@ async function handleIssuesEvent(payload: IssuesEvent, env: Env, installationId:
 		}
 	}
 
-	// Add reaction to issue to acknowledge we're processing it
 	await createReaction(octokit, parsed.context.owner, parsed.context.repo, parsed.context.issueNumber, '+1', 'issue');
 
 	console.info(`${logPrefix} Triggering workflow for issues:${payload.action}`);
@@ -433,7 +445,6 @@ async function handleIssuesEvent(payload: IssuesEvent, env: Env, installationId:
 		issueNumber: parsed.context.issueNumber,
 		defaultBranch: parsed.context.defaultBranch,
 		triggeringActor: parsed.context.actor,
-		eventType: 'issues',
 		commentTimestamp: payload.issue.created_at,
 		issueTitle: parsed.issueTitle,
 		issueBody: parsed.issueBody,
@@ -455,4 +466,68 @@ async function handleWorkflowDispatchEvent(payload: WorkflowDispatchPayload, env
 	// workflow_dispatch events are processed by the GitHub Action (sst/opencode/github)
 	// which reads the prompt from the workflow file inputs.
 	// Bonk's webhook handler acknowledges receipt but does not process these further.
+}
+
+// Handle workflow_run events to track Bonk workflow runs.
+// When a bonk.yml workflow starts (action: requested), we track it via RepoAgent
+// so we can post failure comments if the workflow fails.
+async function handleWorkflowRunEvent(payload: WorkflowRunRequestedEvent, env: Env): Promise<void> {
+	// Only process 'requested' action (workflow started)
+	if (payload.action !== 'requested') {
+		return;
+	}
+
+	const workflowRun = payload.workflow_run;
+	const workflowName = payload.workflow?.name ?? workflowRun.name;
+
+	// Only track bonk.yml workflows
+	if (!workflowName?.toLowerCase().includes('bonk')) {
+		return;
+	}
+
+	const owner = payload.repository.owner.login;
+	const repo = payload.repository.name;
+	const runId = workflowRun.id;
+	const runUrl = workflowRun.html_url;
+	const logPrefix = `[${owner}/${repo}]`;
+
+	console.info(`${logPrefix} Workflow run ${runId} started (${workflowName})`);
+
+	const installationId = payload.installation?.id;
+	if (!installationId) {
+		console.error(`${logPrefix} No installation ID in workflow_run event`);
+		return;
+	}
+
+	// Get or create RepoAgent for this repo
+	const agent = await getAgentByName<Env, RepoAgent>(env.REPO_AGENT, `${owner}/${repo}`);
+	await agent.setInstallationId(installationId);
+
+	// Try to get issue number from multiple sources:
+	// 1. Pull requests array (for PR-triggered runs)
+	// 2. Pending workflow from RepoAgent (stored by runWorkflowMode when user comments)
+	let issueNumber: number | undefined = workflowRun.pull_requests?.[0]?.number;
+
+	if (!issueNumber) {
+		// Look up the pending workflow using actor
+		const actor = workflowRun.triggering_actor?.login ?? workflowRun.actor?.login;
+
+		if (actor) {
+			const pending = await agent.consumePendingWorkflow(actor);
+			if (pending) {
+				issueNumber = pending.issueNumber;
+				console.info(`${logPrefix} Found pending workflow for issue #${issueNumber}`);
+			}
+		}
+	}
+
+	if (!issueNumber) {
+		console.info(`${logPrefix} No issue number found for workflow run ${runId}, skipping tracking`);
+		return;
+	}
+
+	// Track this run via RepoAgent for failure notifications
+	await agent.trackRun(runId, runUrl, issueNumber);
+
+	console.info(`${logPrefix} Now tracking workflow run ${runId} for issue #${issueNumber}`);
 }
