@@ -228,17 +228,20 @@ Deploy your own Bonk instance to Cloudflare Workers:
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/elithrar/ask-bonk)
 
 You'll need to [create a GitHub App](https://docs.github.com/en/apps/creating-github-apps) with the following permissions:
-- Issues: Read & Write
-- Pull requests: Read & Write
 - Contents: Read & Write
+- Issues: Read & Write
 - Metadata: Read
+- Pull requests: Read & Write
+- Workflows: Read & Write
 
-Subscribe to: Issue comments, Pull request review comments, Pull request reviews.
+Subscribe to webhook events: Issue comments, Pull request review comments, Pull request reviews.
 
-Required environment variables:
+Required secrets (set via `wrangler secret put`):
 - `GITHUB_APP_ID` - Your GitHub App ID
-- `GITHUB_PRIVATE_KEY` - Your GitHub App private key
+- `GITHUB_APP_PRIVATE_KEY` - Your GitHub App private key (PEM format)
 - `GITHUB_WEBHOOK_SECRET` - Webhook secret for verifying GitHub requests
+
+BYO LLM keys: any [OpenCode supported provider](https://opencode.ai/docs/providers/) is, well, supported. Users provide their own API keys via repository secrets in their workflows.
 
 ## License
 
