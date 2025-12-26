@@ -169,6 +169,8 @@ jobs:
 
 ## `/ask` Sandbox Mode
 
+> :warning: **Experimental and work-in-progress.** Uses the [Cloudflare Sandbox SDK](https://sandbox.cloudflare.com/) to run off-GitHub tasks.
+
 For programmatic access, Bonk exposes an `/ask` endpoint that runs OpenCode directly in a Cloudflare Sandbox. This allows you to integrate Bonk into your own workflows, scripts, or applications without going through GitHub issues and PRs.
 
 When you make a request to `/ask`:
