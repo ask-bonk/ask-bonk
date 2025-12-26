@@ -132,27 +132,20 @@ The default workflow triggers on `issue_comment` and `pull_request_review_commen
 | `schedule` | Cron expression | Runs automated tasks on a schedule. The prompt comes from the workflow file's `prompt` input. |
 | `workflow_dispatch` | Manual trigger in Actions UI | Runs tasks on-demand via the GitHub Actions interface. |
 
-#### Adding PR Review Support
+#### Adding a `/review` Command
 
 ```yaml
-on:
-  issue_comment:
-    types: [created]
-  pull_request_review_comment:
-    types: [created]
-  pull_request_review:
-    types: [submitted]
-
-jobs:
-  bonk:
-    if: |
-      github.event.sender.type != 'Bot' &&
-      (
-        contains(github.event.comment.body, '@ask-bonk') ||
-        contains(github.event.comment.body, '/bonk') ||
-        contains(github.event.review.body, '@ask-bonk') ||
-        contains(github.event.review.body, '/bonk')
-      )
+- name: Run Bonk
+  uses: elithrar/ask-bonk/github@main
+  env:
+    OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+  with:
+    model: "opencode/claude-opus-4-5"
+    mentions: "/review"
+    prompt: |
+      Review this PR for bugs, security issues, and style. Leave suggestions
+      on specific line numbers. Consider the wider context of each file and
+      follow the repository's existing conventions.
 ```
 
 #### Scheduled Tasks
