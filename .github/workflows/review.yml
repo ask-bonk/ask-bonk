@@ -39,12 +39,12 @@ jobs:
       - name: Get PR details
         id: pr-details
         run: |
-          gh api /repos/${{ github.repository }}/pulls/${{ steps.pr-number.outputs.number }} > pr_data.json
-          echo "title=$(jq -r .title pr_data.json)" >> $GITHUB_OUTPUT
-          echo "sha=$(jq -r .head.sha pr_data.json)" >> $GITHUB_OUTPUT
+          gh api /repos/${{ github.repository }}/pulls/${{ steps.pr-number.outputs.number }} > /tmp/pr_data.json
+          echo "title=$(jq -r .title /tmp/pr_data.json)" >> $GITHUB_OUTPUT
+          echo "sha=$(jq -r .head.sha /tmp/pr_data.json)" >> $GITHUB_OUTPUT
           {
             echo 'body<<EOF'
-            jq -r .body pr_data.json
+            jq -r .body /tmp/pr_data.json
             echo EOF
           } >> $GITHUB_OUTPUT
         env:
