@@ -23,7 +23,7 @@ import { getAgentByName } from 'agents';
 export { Sandbox } from '@cloudflare/sandbox';
 export { RepoAgent };
 
-const GITHUB_REPO_URL = 'https://github.com/elithrar/ask-bonk';
+const GITHUB_REPO_URL = 'https://github.com/ask-bonk/ask-bonk';
 const DEFAULT_ALLOWED_ORGS = 'elithrar';
 
 function getAllowedOrgs(env: Env): string[] {

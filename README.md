@@ -47,7 +47,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Bonk
-        uses: elithrar/ask-bonk/github@main
+        uses: ask-bonk/ask-bonk/github@main
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         with:
@@ -69,7 +69,7 @@ Mention `@ask-bonk` or `/bonk` in any issue or PR comment.
 
 ```yaml
       - name: Run Bonk
-        uses: elithrar/ask-bonk/github@main
+        uses: ask-bonk/ask-bonk/github@main
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         with:
@@ -129,7 +129,7 @@ The default workflow triggers on `issue_comment` and `pull_request_review_commen
 
 ```yaml
 - name: Run Bonk
-  uses: elithrar/ask-bonk/github@main
+  uses: ask-bonk/ask-bonk/github@main
   env:
     OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
   with:
@@ -161,7 +161,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Bonk
-        uses: elithrar/ask-bonk/github@main
+        uses: ask-bonk/ask-bonk/github@main
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         with:
@@ -235,7 +235,7 @@ For advanced configuration (custom providers, system prompts, custom tools, etc.
 
 Deploy your own Bonk instance to Cloudflare Workers:
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/elithrar/ask-bonk)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ask-bonk/ask-bonk)
 
 You'll need to [create a GitHub App](https://docs.github.com/en/apps/creating-github-apps) with the following permissions:
 - Contents: Read & Write

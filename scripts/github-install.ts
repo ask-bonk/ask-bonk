@@ -18,7 +18,7 @@ import * as path from 'path';
 const WORKFLOW_FILE_PATH = '.github/workflows/bonk.yml';
 const OPENCODE_CONFIG_PATH = '.opencode/opencode.jsonc';
 const WORKFLOW_BRANCH = 'bonk/add-workflow-file';
-const DEPLOY_BUTTON_URL = 'https://deploy.workers.cloudflare.com/?url=https://github.com/elithrar/ask-bonk';
+const DEPLOY_BUTTON_URL = 'https://deploy.workers.cloudflare.com/?url=https://github.com/ask-bonk/ask-bonk';
 const GITHUB_APP_URL = 'https://github.com/apps/ask-bonk';
 const OIDC_BASE_URL = 'https://ask-bonk.silverlock.workers.dev/auth';
 
