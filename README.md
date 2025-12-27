@@ -14,7 +14,7 @@ It's a code (and docs!) review agent that responds to mentions in issues and PRs
 
 ## Installation
 
-> :bangbang: The hosted Bonk instance only runs on a handful of repos (`elithrar/*` and `cloudflare/*`). To use Bonk on your own repos, you'll need to [self-host](#self-hosting) your own instance.
+> :bangbang: The hosted Bonk instance only runs on a handful of repos (`elithrar/*`, `cloudflare/*`, and `ask-bonk/*`). Installing Bonk on repositories outside these orgs will result in the installation being automatically rejected. To use Bonk on your own repos, you'll need to [self-host](#self-hosting) your own instance.
 
 ### 1. Install the GitHub App
 

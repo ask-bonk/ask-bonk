@@ -23,8 +23,8 @@
 		"DEFAULT_MODEL": "opencode/claude-opus-4-5",
 		// ASK_SECRET: Set via wrangler secret for production
 		// Empty or missing = /ask endpoint is disabled
-		// Comma-separated list of allowed orgs/users
-		"ALLOWED_ORGS": "elithrar,cloudflare,ask-bonk",
+		// Allowed orgs/users for GitHub App installation
+		"ALLOWED_ORGS": ["elithrar", "cloudflare", "ask-bonk"],
 	},
 	// "containers": [
 	// 	{

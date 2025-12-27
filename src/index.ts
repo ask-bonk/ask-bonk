@@ -10,6 +10,7 @@ import {
 	hasWriteAccess,
 	createReaction,
 	createComment,
+	deleteInstallation,
 	type ReactionTarget,
 } from './github';
 import type { ScheduleEventPayload, WorkflowDispatchPayload } from './types';
@@ -24,26 +25,22 @@ export { Sandbox } from '@cloudflare/sandbox';
 export { RepoAgent };
 
 const GITHUB_REPO_URL = 'https://github.com/ask-bonk/ask-bonk';
-const DEFAULT_ALLOWED_ORGS = 'elithrar';
-
-function getAllowedOrgs(env: Env): string[] {
-	const orgs = env.ALLOWED_ORGS ?? DEFAULT_ALLOWED_ORGS;
-	return orgs.split(',').map((o) => o.trim().toLowerCase()).filter(Boolean);
-}
 
 function isAllowedOrg(owner: string, env: Env): boolean {
-	const allowed = getAllowedOrgs(env);
+	const allowed = env.ALLOWED_ORGS ?? [];
 	if (allowed.length === 0) return true;
-	return allowed.includes(owner.toLowerCase());
+	return allowed.map((o) => o.toLowerCase()).includes(owner.toLowerCase());
 }
 
 // User-driven events: triggered by user actions (comments, issue creation)
 // Repo-driven events: triggered by repository automation (schedule, workflow_dispatch)
 // System events: triggered by GitHub itself (workflow_run)
+// Meta events: GitHub App lifecycle events (installation)
 const USER_EVENTS = ['issue_comment', 'pull_request_review_comment', 'issues'] as const;
 const REPO_EVENTS = ['schedule', 'workflow_dispatch'] as const;
 const SYSTEM_EVENTS = ['workflow_run'] as const;
-const SUPPORTED_EVENTS = [...USER_EVENTS, ...REPO_EVENTS, ...SYSTEM_EVENTS] as const;
+const META_EVENTS = ['installation'] as const;
+const SUPPORTED_EVENTS = [...USER_EVENTS, ...REPO_EVENTS, ...SYSTEM_EVENTS, ...META_EVENTS] as const;
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -213,6 +210,13 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
 	}
 
 	try {
+		// Handle meta events (installation) before other checks - these may delete installations
+		const isMetaEvent = META_EVENTS.includes(event.name as (typeof META_EVENTS)[number]);
+		if (isMetaEvent) {
+			await handleMetaEvent(event.name, event.payload, env);
+			return new Response('OK', { status: 200 });
+		}
+
 		// Check if the repo owner is in the allowed list
 		const owner = repository?.owner?.login;
 		if (owner && !isAllowedOrg(owner, env)) {
@@ -295,6 +299,38 @@ async function handleSystemEvent(eventName: string, payload: unknown, env: Env):
 		case 'workflow_run':
 			await handleWorkflowRunEvent(payload as WorkflowRunRequestedEvent, env);
 			break;
+	}
+}
+
+// Meta events: GitHub App lifecycle events (installation)
+// Checks if the installation is on an allowed org, and deletes it if not
+async function handleMetaEvent(eventName: string, payload: unknown, env: Env): Promise<void> {
+	if (eventName !== 'installation') return;
+
+	const p = payload as {
+		action?: string;
+		installation?: { id?: number; account?: { login?: string } };
+	};
+
+	// Only handle 'created' action (new installation)
+	if (p.action !== 'created') return;
+
+	const installationId = p.installation?.id;
+	const owner = p.installation?.account?.login;
+	if (!installationId || !owner) return;
+
+	if (isAllowedOrg(owner, env)) {
+		console.info(`[${owner}] Installation ${installationId} allowed`);
+		return;
+	}
+
+	// Org not in allowed list - delete the installation
+	console.info(`[${owner}] Installation ${installationId} rejected - org not in ALLOWED_ORGS, uninstalling`);
+	try {
+		await deleteInstallation(env, installationId);
+		console.info(`[${owner}] Installation ${installationId} deleted`);
+	} catch (error) {
+		console.error(`[${owner}] Failed to delete installation ${installationId}:`, error);
 	}
 }
 
