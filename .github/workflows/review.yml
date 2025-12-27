@@ -70,7 +70,7 @@ jobs:
             2. Break up "needs fixing" (real logic bugs, poor error handling, security issues) vs. "suggestions" (nested logic, unused code, code structure/maintenance guidance) when responding so that a human has clear, actionable feedback.
             3. Use the gh cli to create comments on the files (or line numbers) where relevant. Use suggestions to suggest fixes, especially where you have high-confidence in the fix. Ensure fixes are valid code and take into account the surrounding code (opening/closing braces, indentation, comments).
 
-            In general, aim to provide actionable comments > code suggestions.
+            In general, aim to provide actionable comments > code suggestions. Make line level comments and only ONE summary comment as a PR review comment. Do not make additional PR comments or summary comments.
 
             <pr_number>
             ${{ steps.pr-number.outputs.number }}
