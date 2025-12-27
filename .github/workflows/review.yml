@@ -54,7 +54,6 @@ jobs:
         uses: ask-bonk/ask-bonk/github@main
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           model: opencode/claude-opus-4-5
           mentions: "/review"
