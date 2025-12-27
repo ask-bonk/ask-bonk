@@ -56,7 +56,7 @@ jobs:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         with:
           model: opencode/claude-opus-4-5
-          mentions: "/review"
+          mentions: '/review'
           permissions: write
           agent: reviewer
           prompt: |
@@ -69,6 +69,7 @@ jobs:
             1. Focus on actual violations and bugs. Where possible, comment on the exact line number to help guide the reviewer.
             2. Break up "needs fixing" (real logic bugs, poor error handling, security issues) vs. "suggestions" (nested logic, unused code, code structure/maintenance guidance) when responding so that a human has clear, actionable feedback.
             3. Use the gh cli to create comments on the files (or line numbers) where relevant. Use suggestions to suggest fixes, especially where you have high-confidence in the fix. Ensure fixes are valid code and take into account the surrounding code (opening/closing braces, indentation, comments).
+            4. ONLY create ONE (1) summary comment as a comment on the PR (if necessary). Do not make additional PR/issue comments to summarize the review.
 
             In general, aim to provide actionable comments > code suggestions.
 
