@@ -9,34 +9,69 @@ import type { Env, GitHubIssue, GitHubPullRequest, IssueQueryResponse, PullReque
 const ResilientOctokit = Octokit.plugin(retry, throttling);
 
 export async function createOctokit(env: Env, installationId: number): Promise<Octokit> {
-	const auth = createAppAuth({
-		appId: env.GITHUB_APP_ID,
-		privateKey: env.GITHUB_APP_PRIVATE_KEY,
-		installationId,
-	});
+	console.log('Starting createOctokit function');
+	console.log('Installation ID:', installationId);
+	console.log('App ID:', env.GITHUB_APP_ID);
 
-	const { token } = await auth({ type: 'installation' });
+	try {
+		console.log('Creating app auth...');
+		const auth = createAppAuth({
+			appId: env.GITHUB_APP_ID,
+			privateKey: env.GITHUB_APP_PRIVATE_KEY,
+			installationId,
+		});
+		console.log('App auth created successfully');
 
-	return new ResilientOctokit({
-		auth: token,
-		retry: {
-			retries: 3,
-			retryAfterBaseValue: 2000, // 2s base → delays of 2s, 8s, 18s via quadratic backoff
-			doNotRetry: [400, 401, 403, 404, 422, 429], // don't retry client errors; 429 handled by throttling
-		},
-		throttle: {
-			onRateLimit: (retryAfter, options, octokit, retryCount) => {
-				octokit.log.warn(`Rate limit hit for ${options.method} ${options.url}`);
-				if (retryCount < 2) {
-					octokit.log.info(`Retrying after ${retryAfter}s`);
-					return true;
-				}
-			},
-			onSecondaryRateLimit: (retryAfter, options, octokit) => {
-				octokit.log.warn(`Secondary rate limit for ${options.method} ${options.url}`);
-			},
-		},
-	});
+		try {
+			console.log('Getting installation token...');
+			const { token } = await auth({ type: 'installation' });
+			console.log('Installation token obtained successfully');
+			console.log('Token length:', token.length);
+
+			try {
+				console.log('Creating ResilientOctokit instance...');
+				const octokit = new ResilientOctokit({
+					auth: token,
+					retry: {
+						retries: 3,
+						retryAfterBaseValue: 2000,
+						doNotRetry: [400, 401, 403, 404, 422, 429],
+					},
+					throttle: {
+						onRateLimit: (retryAfter, options, octokit, retryCount) => {
+							console.log('Rate limit callback triggered');
+							octokit.log.warn(`Rate limit hit for ${options.method} ${options.url}`);
+							if (retryCount < 2) {
+								console.log('Will retry after rate limit');
+								octokit.log.info(`Retrying after ${retryAfter}s`);
+								return true;
+							}
+							console.log('Max retries reached for rate limit');
+						},
+						onSecondaryRateLimit: (retryAfter, options, octokit) => {
+							console.log('Secondary rate limit callback triggered');
+							octokit.log.warn(`Secondary rate limit for ${options.method} ${options.url}`);
+						},
+					},
+				});
+				console.log('ResilientOctokit instance created successfully');
+				console.log('Returning octokit instance');
+				return octokit;
+			} catch (error) {
+				console.log('Error creating ResilientOctokit instance');
+				console.error('ResilientOctokit error:', error);
+				throw error;
+			}
+		} catch (error) {
+			console.log('Error getting installation token');
+			console.error('Token error:', error);
+			throw error;
+		}
+	} catch (error) {
+		console.log('Error in createOctokit function');
+		console.error('createOctokit error:', error);
+		throw error;
+	}
 }
 
 export async function createGraphQL(env: Env, installationId: number): Promise<typeof graphql> {
@@ -89,28 +124,58 @@ export async function verifyWebhook(webhooks: Webhooks, request: Request): Promi
 }
 
 export async function hasWriteAccess(octokit: Octokit, owner: string, repo: string, username: string): Promise<boolean> {
+	console.log('Starting hasWriteAccess function');
+	console.log('Owner:', owner);
+	console.log('Repo:', repo);
+	console.log('Username:', username);
+
 	try {
+		console.log('About to call getCollaboratorPermissionLevel');
 		const response = await octokit.repos.getCollaboratorPermissionLevel({
 			owner,
 			repo,
 			username,
 		});
+		console.log('getCollaboratorPermissionLevel successful');
+		console.log('Permission level:', response.data.permission);
 
-		return ['admin', 'write'].includes(response.data.permission);
-	} catch {
+		const hasAccess = ['admin', 'write'].includes(response.data.permission);
+		console.log('Has write access:', hasAccess);
+		return hasAccess;
+	} catch (error) {
+		console.log('Error in hasWriteAccess');
+		console.error('hasWriteAccess error:', error);
 		return false;
 	}
 }
 
 export async function createComment(octokit: Octokit, owner: string, repo: string, issueNumber: number, body: string): Promise<number> {
-	const response = await octokit.issues.createComment({
-		owner,
-		repo,
-		issue_number: issueNumber,
-		body,
-	});
+	console.log('Starting createComment function');
+	console.log('Owner:', owner);
+	console.log('Repo:', repo);
+	console.log('Issue number:', issueNumber);
+	console.log('Body length:', body.length);
+	console.log('Body preview:', body.substring(0, 100));
 
-	return response.data.id;
+	try {
+		console.log('About to call octokit.issues.createComment');
+		const response = await octokit.issues.createComment({
+			owner,
+			repo,
+			issue_number: issueNumber,
+			body,
+		});
+		console.log('createComment API call successful');
+		console.log('Response status:', response.status);
+		console.log('Comment ID:', response.data.id);
+		console.log('Comment URL:', response.data.html_url);
+
+		return response.data.id;
+	} catch (error) {
+		console.log('Error in createComment');
+		console.error('createComment error:', error);
+		throw error;
+	}
 }
 
 export async function updateComment(octokit: Octokit, owner: string, repo: string, commentId: number, body: string): Promise<void> {
