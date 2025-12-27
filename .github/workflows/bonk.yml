@@ -34,4 +34,5 @@ jobs:
         with:
           model: opencode/claude-opus-4-5
           mentions: "/bonk,@ask-bonk"
+          share: false
           permissions: write
