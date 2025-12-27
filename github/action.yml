@@ -204,6 +204,31 @@ runs:
         git config --global user.name "ask-bonk[bot]"
         git config --global user.email "ask-bonk[bot]@users.noreply.github.com"
 
+    - name: Exchange OIDC token for GitHub App token
+      if: steps.mentions.outputs.skip != 'true'
+      id: oidc
+      shell: bash
+      run: |
+        # Get GitHub Actions OIDC token
+        OIDC_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+          "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=opencode-github-action" | jq -r '.value')
+        
+        # Exchange for GitHub App installation token via Bonk's OIDC endpoint
+        RESPONSE=$(curl -s -X POST "${{ inputs.oidc_base_url }}/exchange_github_app_token" \
+          -H "Authorization: Bearer $OIDC_TOKEN" \
+          -H "Content-Type: application/json")
+        
+        APP_TOKEN=$(echo "$RESPONSE" | jq -r '.token // empty')
+        
+        if [ -z "$APP_TOKEN" ]; then
+          echo "::error::Failed to exchange OIDC token: $(echo "$RESPONSE" | jq -r '.error // "Unknown error"')"
+          exit 1
+        fi
+        
+        # Mask the token in logs and export for subsequent steps
+        echo "::add-mask::$APP_TOKEN"
+        echo "GH_TOKEN=$APP_TOKEN" >> $GITHUB_ENV
+
     - name: Run opencode
       if: steps.mentions.outputs.skip != 'true'
       id: opencode
