@@ -85,6 +85,14 @@ function loadTemplate(name: string): string {
 	return fs.readFileSync(templatePath, 'utf-8')
 }
 
+function writeWorkflowLocally(filename: string, content: string): string {
+	const workflowDir = path.join(process.cwd(), '.github', 'workflows')
+	fs.mkdirSync(workflowDir, { recursive: true })
+	const filePath = path.join(workflowDir, filename)
+	fs.writeFileSync(filePath, content)
+	return filePath
+}
+
 function renderTemplate(template: string, vars: Record<string, string>): string {
 	let result = template
 	for (const [key, value] of Object.entries(vars)) {
@@ -168,13 +176,16 @@ async function runInstall() {
 
 	p.log.success('GitHub CLI is installed and authenticated')
 
-	if (!hasWorkflowScope()) {
-		p.log.warn("GitHub CLI missing 'workflow' scope (required to create workflow files)")
+	let canWriteRemote = hasWorkflowScope()
+	if (!canWriteRemote) {
+		p.log.warn("GitHub CLI missing 'workflow' scope")
 		p.log.info('Run: gh auth refresh -h github.com -s workflow')
-		const proceed = await p.confirm({ message: 'Try anyway?' })
-		if (p.isCancel(proceed) || !proceed) {
-			process.exit(1)
+		const proceed = await p.confirm({ message: 'Write workflow files to current directory instead?' })
+		if (p.isCancel(proceed)) {
+			p.cancel('Operation cancelled.')
+			process.exit(0)
 		}
+		canWriteRemote = !proceed
 	}
 
 	// Get target repository
@@ -262,15 +273,27 @@ async function runInstall() {
 	}
 
 	if (addWorkflows) {
-		await runWorkflow(targetRepo, providerConfig)
+		await runWorkflow(targetRepo, providerConfig, canWriteRemote)
 	}
 
 	p.outro('Setup complete! Run `bonk workflow` to add more workflows.')
 }
 
-async function runWorkflow(repo?: string, providerConfig?: ProviderConfig) {
+async function runWorkflow(repo?: string, providerConfig?: ProviderConfig, canWriteRemote: boolean = true) {
 	if (!repo) {
 		p.intro('Bonk Workflow')
+
+		// Check workflow scope upfront when running standalone
+		if (!hasWorkflowScope()) {
+			p.log.warn("GitHub CLI missing 'workflow' scope")
+			p.log.info('Run: gh auth refresh -h github.com -s workflow')
+			const proceed = await p.confirm({ message: 'Write workflow files to current directory instead?' })
+			if (p.isCancel(proceed)) {
+				p.cancel('Operation cancelled.')
+				process.exit(0)
+			}
+			canWriteRemote = !proceed
+		}
 
 		const detectedRepo = getGitOrigin()
 		const targetRepo = await p.text({
@@ -349,61 +372,68 @@ async function runWorkflow(repo?: string, providerConfig?: ProviderConfig) {
 
 		const workflowPath = `.github/workflows/${config.filename}`
 
-		// Check if workflow exists
-		if (workflowExists(repo!, workflowPath)) {
-			const overwrite = await p.confirm({
-				message: `Workflow ${config.filename} already exists. Overwrite?`,
-			})
-			if (p.isCancel(overwrite) || !overwrite) {
-				p.log.info('Skipping workflow creation')
-				continue
-			}
-		}
-
-		// Create workflow via PR
-		const defaultBranch = getDefaultBranch(repo!)
-		const branchName = `bonk/add-${config.filename.replace('.yml', '')}`
-
-		// Check for existing PR
-		const existingPR = findExistingPR(repo!, branchName)
-		if (existingPR) {
-			p.log.warn(`PR already exists: ${existingPR}`)
-			const proceed = await p.confirm({ message: 'Update the existing PR?' })
-			if (p.isCancel(proceed) || !proceed) {
-				continue
-			}
-		}
-
-		const spinner = p.spinner()
-		spinner.start('Creating workflow...')
-
-		// Create branch if needed
-		if (!branchExists(repo!, branchName)) {
-			if (!createBranch(repo!, branchName, defaultBranch)) {
-				spinner.stop('Failed to create branch')
-				continue
-			}
-		}
-
-		// Create file
-		if (!createFile(repo!, workflowPath, content, `Add ${config.name} workflow`, branchName)) {
-			spinner.stop('Failed to create workflow file')
-			continue
-		}
-
-		// Create PR if it doesn't exist
-		if (!existingPR) {
-			const prBody = `## Summary\n\nAdds the ${config.name} Bonk workflow.\n\n## Usage\n\n${getUsageDescription(preset, config)}`
-			const prUrl = createPR(repo!, branchName, defaultBranch, `Add ${config.name} workflow`, prBody)
-
-			if (prUrl) {
-				spinner.stop(`Created PR: ${prUrl}`)
-			} else {
-				spinner.stop('Workflow file created, but PR creation failed')
-				p.log.info(`Create PR manually: https://github.com/${repo}/compare/${branchName}`)
-			}
+		if (!canWriteRemote) {
+			// Write locally when gh doesn't have workflow permissions
+			const localPath = writeWorkflowLocally(config.filename, content)
+			p.log.success(`Workflow written to ${localPath}`)
+			p.log.info('Commit and push to enable the workflow')
 		} else {
-			spinner.stop('Updated existing PR')
+			// Check if workflow exists
+			if (workflowExists(repo!, workflowPath)) {
+				const overwrite = await p.confirm({
+					message: `Workflow ${config.filename} already exists. Overwrite?`,
+				})
+				if (p.isCancel(overwrite) || !overwrite) {
+					p.log.info('Skipping workflow creation')
+					continue
+				}
+			}
+
+			// Create workflow via PR
+			const defaultBranch = getDefaultBranch(repo!)
+			const branchName = `bonk/add-${config.filename.replace('.yml', '')}`
+
+			// Check for existing PR
+			const existingPR = findExistingPR(repo!, branchName)
+			if (existingPR) {
+				p.log.warn(`PR already exists: ${existingPR}`)
+				const proceed = await p.confirm({ message: 'Update the existing PR?' })
+				if (p.isCancel(proceed) || !proceed) {
+					continue
+				}
+			}
+
+			const spinner = p.spinner()
+			spinner.start('Creating workflow...')
+
+			// Create branch if needed
+			if (!branchExists(repo!, branchName)) {
+				if (!createBranch(repo!, branchName, defaultBranch)) {
+					spinner.stop('Failed to create branch')
+					continue
+				}
+			}
+
+			// Create file
+			if (!createFile(repo!, workflowPath, content, `Add ${config.name} workflow`, branchName)) {
+				spinner.stop('Failed to create workflow file')
+				continue
+			}
+
+			// Create PR if it doesn't exist
+			if (!existingPR) {
+				const prBody = `## Summary\n\nAdds the ${config.name} Bonk workflow.\n\n## Usage\n\n${getUsageDescription(preset, config)}`
+				const prUrl = createPR(repo!, branchName, defaultBranch, `Add ${config.name} workflow`, prBody)
+
+				if (prUrl) {
+					spinner.stop(`Created PR: ${prUrl}`)
+				} else {
+					spinner.stop('Workflow file created, but PR creation failed')
+					p.log.info(`Create PR manually: https://github.com/${repo}/compare/${branchName}`)
+				}
+			} else {
+				spinner.stop('Updated existing PR')
+			}
 		}
 
 		const another = await p.confirm({
@@ -419,7 +449,11 @@ async function runWorkflow(repo?: string, providerConfig?: ProviderConfig) {
 	}
 
 	if (!repo) {
-		p.outro("Don't forget to merge the PR(s) to enable your workflows!")
+		if (canWriteRemote) {
+			p.outro("Don't forget to merge the PR(s) to enable your workflows!")
+		} else {
+			p.outro('Commit and push workflow files to enable them')
+		}
 	}
 }
 
@@ -663,6 +697,29 @@ function getUsageDescription(preset: WorkflowPreset, config: WorkflowConfig): st
 	}
 }
 
+async function showMenu() {
+	p.intro('Bonk CLI')
+
+	const action = await p.select({
+		message: 'What would you like to do?',
+		options: [
+			{ value: 'install', label: 'Install', hint: 'install the Bonk app + a workflow on a repo' },
+			{ value: 'workflow', label: 'Workflow', hint: 'create additional Bonk workflows' },
+		],
+	})
+
+	if (p.isCancel(action)) {
+		p.cancel('Operation cancelled.')
+		process.exit(0)
+	}
+
+	if (action === 'install') {
+		await runInstall()
+	} else {
+		await runWorkflow()
+	}
+}
+
 // CLI entry point
 const command = process.argv[2]
 
@@ -675,7 +732,6 @@ switch (command) {
 		break
 	case '--help':
 	case '-h':
-	case undefined:
 		console.log(`
 Bonk CLI
 
@@ -686,6 +742,9 @@ Commands:
 Options:
   --help, -h     Show this help message
 `)
+		break
+	case undefined:
+		showMenu()
 		break
 	default:
 		console.error(`Unknown command: ${command}`)
