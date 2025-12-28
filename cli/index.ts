@@ -698,7 +698,7 @@ function getUsageDescription(preset: WorkflowPreset, config: WorkflowConfig): st
 }
 
 async function showMenu() {
-	p.intro('Bonk CLI')
+	p.intro('Bonk CLI: a command-line helper for installing Bonk, a code-review tool build on OpenCode')
 
 	const action = await p.select({
 		message: 'What would you like to do?',
