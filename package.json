@@ -18,10 +18,10 @@
 		"@octokit/plugin-throttling": "^11.0.3",
 		"@octokit/rest": "^22.0.1",
 		"@octokit/webhooks": "^14.2.0",
-		"@opencode-ai/plugin": "^1.0.190",
-		"@opencode-ai/sdk": "^1.0.190",
+		"@opencode-ai/plugin": "^1.0.204",
+		"@opencode-ai/sdk": "^1.0.204",
 		"agents": "^0.0.83",
-		"hono": "^4.11.1",
+		"hono": "^4.11.3",
 		"jose": "^6.1.3",
 		"shescape": "^2.1.7",
 		"ulid": "^3.0.2"
