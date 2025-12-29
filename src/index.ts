@@ -14,7 +14,7 @@ import {
 import type { ScheduleEventPayload, WorkflowDispatchPayload } from './types';
 import { parseIssueCommentEvent, parseIssuesEvent, parsePRReviewCommentEvent, parseScheduleEvent, parseWorkflowDispatchEvent } from './events';
 import { ensureWorkflowFile } from './workflow';
-import { handleGetInstallation, handleExchangeToken, handleExchangeTokenForRepo, handleExchangeTokenWithPAT, validateGitHubOIDCToken, extractRepoFromClaims, getInstallationId } from './oidc';
+import { handleGetInstallation, handleExchangeToken, handleExchangeTokenForRepo, handleExchangeTokenWithPAT, validateGitHubOIDCToken, extractRepoFromClaims, getInstallationId, APP_INSTALLATION_CACHE_TTL_SECS } from './oidc';
 import { RepoAgent } from './agent';
 import { runAsk } from './sandbox';
 import { getAgentByName } from 'agents';
@@ -385,7 +385,7 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
 	const repository = payload.repository as { owner?: { login?: string }; name?: string } | undefined;
 	if (installation?.id && repository?.owner?.login && repository?.name) {
 		const repoKey = `${repository.owner.login}/${repository.name}`;
-		await env.APP_INSTALLATIONS.put(repoKey, String(installation.id));
+		await env.APP_INSTALLATIONS.put(repoKey, String(installation.id), { expirationTtl: APP_INSTALLATION_CACHE_TTL_SECS });
 		console.info(`Stored installation ${installation.id} for ${repoKey}`);
 	}
 
