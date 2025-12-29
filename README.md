@@ -20,16 +20,16 @@ It's a code (and docs!) review agent that responds to mentions in issues and PRs
 
 ### Using the CLI (recommended)
 
-The CLI handles app installation, API key setup, and workflow creation:
+The CLI handles app installation, API key setup, and workflow creation. Clone the repo and run:
 
 ```bash
-npx ask-bonk install
+bun run cli install
 ```
 
 Or add new workflows to an existing installation:
 
 ```bash
-npx ask-bonk workflow
+bun run cli workflow
 ```
 
 ### Manual Installation
