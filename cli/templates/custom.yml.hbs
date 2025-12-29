@@ -1,10 +1,7 @@
-name: Bonk
+name: {{NAME}}
 
 on:
-  issue_comment:
-    types: [created]
-  pull_request_review_comment:
-    types: [created]
+{{EVENTS}}
 
 jobs:
   bonk:
@@ -12,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
-      contents: write
+      contents: {{PERMISSIONS}}
       issues: write
       pull-requests: write
     steps:
@@ -24,8 +21,10 @@ jobs:
       - name: Run Bonk
         uses: ask-bonk/ask-bonk/github@main
         env:
-          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          {{KEY_NAME}}: ${{ secrets.{{KEY_NAME}} }}
         with:
           model: "{{MODEL}}"
-          mentions: "{{BOT_COMMAND}},{{BOT_MENTION}}"
-          permissions: write
+          mentions: "{{MENTIONS}}"
+          permissions: {{PERMISSIONS}}
+          prompt: |
+            {{PROMPT}}

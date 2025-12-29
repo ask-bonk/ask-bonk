@@ -9,9 +9,10 @@
 		"test": "vitest",
 		"test:plugin": "bun test test/tools/",
 		"cf-typegen": "wrangler types",
-		"github:install": "bun scripts/github-install.ts"
+		"cli:build": "bun build cli/index.ts --compile --outfile cli/bonk"
 	},
 	"dependencies": {
+		"@clack/prompts": "^0.10.0",
 		"@cloudflare/sandbox": "^0.6.7",
 		"@octokit/auth-app": "^8.1.2",
 		"@octokit/plugin-retry": "^8.0.3",

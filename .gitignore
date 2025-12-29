@@ -168,3 +168,6 @@ dist
 
 # npm lockfile - we use bun
 package-lock.json
+
+# CLI binary
+cli/bonk
