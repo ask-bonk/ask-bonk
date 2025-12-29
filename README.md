@@ -16,6 +16,8 @@ It's a code (and docs!) review agent that responds to mentions in issues and PRs
 
 > :bangbang: The hosted Bonk instance only runs on a handful of repos (`elithrar/*`, `cloudflare/*`, and `ask-bonk/*`). Installing Bonk on repositories outside these orgs will result in the installation being automatically rejected. The app & action are public as GitHub doesn't support an allowlist for app installs: just same-org or "anyone".
 
+> **To use Bonk on your own repos**, you'll need to create your own GitHub app and [self-host](#self-hosting) your own instance.
+
 ### Using the CLI (recommended)
 
 The CLI handles app installation, API key setup, and workflow creation:
@@ -32,15 +34,13 @@ npx ask-bonk workflow
 
 ### Manual Installation
 
-> **To use Bonk on your own repos**, you'll need to create your own GitHub app and [self-host](#self-hosting) your own instance.
-
 #### 1. Install the GitHub App
 
 Install the [ask-bonk GitHub App](https://github.com/apps/ask-bonk) on your repository.
 
 #### 2. Add the Workflow File
 
-Create `.github/workflows/bonk.yml` in your repository:
+Create a simple `.github/workflows/bonk.yml` in your repository:
 
 ```yaml
 name: Bonk
@@ -67,7 +67,7 @@ jobs:
       - name: Run Bonk
         uses: ask-bonk/ask-bonk/github@main
         env:
-          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }} # or the supported provider of your choice
         with:
           model: "opencode/claude-opus-4-5"
           mentions: "/bonk,@ask-bonk"
