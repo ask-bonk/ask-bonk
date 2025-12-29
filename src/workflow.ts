@@ -1,8 +1,6 @@
 import type { Octokit } from "@octokit/rest";
-import { getAgentByName } from "agents";
-import { DEFAULT_MODEL, type Env } from "./types";
+import { DEFAULT_MODEL } from "./types";
 import {
-	createOctokit,
 	createComment,
 	fileExists,
 	getDefaultBranchSha,
@@ -11,27 +9,15 @@ import {
 	createPullRequest,
 	findOpenPR,
 } from "./github";
-import { RepoAgent } from "./agent";
 import workflowTemplate from "../scripts/bonk.yml.hbs";
 
 const WORKFLOW_FILE_PATH = ".github/workflows/bonk.yml";
 const WORKFLOW_BRANCH = "bonk/add-workflow-file";
 
-export interface WorkflowContext {
-	owner: string;
-	repo: string;
-	issueNumber: number;
-	defaultBranch: string;
-	triggeringActor: string;
-	commentTimestamp: string;
-	issueTitle?: string;
-	issueBody?: string;
-}
-
-export interface WorkflowResult {
-	success: boolean;
-	message: string;
+export interface SetupResult {
+	exists: boolean;
 	prUrl?: string;
+	prNumber?: number;
 }
 
 const BOT_MENTION = "@ask-bonk";
@@ -44,40 +30,24 @@ function generateWorkflowContent(): string {
 		.replace(/\{\{MODEL\}\}/g, DEFAULT_MODEL);
 }
 
-
-export async function runWorkflowMode(
-	env: Env,
-	installationId: number,
-	context: WorkflowContext
-): Promise<WorkflowResult> {
-	const {
-		owner,
-		repo,
-		issueNumber,
-		defaultBranch,
-		triggeringActor,
-		commentTimestamp,
-	} = context;
+// Check if workflow file exists, create PR if not
+export async function ensureWorkflowFile(
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	issueNumber: number,
+	defaultBranch: string
+): Promise<SetupResult> {
 	const logPrefix = `[${owner}/${repo}#${issueNumber}]`;
-	const octokit = await createOctokit(env, installationId);
 	const hasWorkflow = await fileExists(octokit, owner, repo, WORKFLOW_FILE_PATH);
 
-	if (!hasWorkflow) {
-		console.info(`${logPrefix} Workflow file not found, creating PR`);
-		return await createWorkflowPR(octokit, owner, repo, issueNumber, defaultBranch);
+	if (hasWorkflow) {
+		console.info(`${logPrefix} Workflow file exists`);
+		return { exists: true };
 	}
 
-	// Store pending workflow in RepoAgent for workflow_run webhook to correlate
-	const agent = await getAgentByName<Env, RepoAgent>(env.REPO_AGENT, `${owner}/${repo}`);
-	await agent.setInstallationId(installationId);
-	await agent.addPendingWorkflow(triggeringActor, commentTimestamp, issueNumber);
-
-	console.info(`${logPrefix} Stored pending workflow via RepoAgent`);
-
-	return {
-		success: true,
-		message: `Workflow triggered, awaiting workflow_run event`,
-	};
+	console.info(`${logPrefix} Workflow file not found, creating PR`);
+	return await createWorkflowPR(octokit, owner, repo, issueNumber, defaultBranch);
 }
 
 async function createWorkflowPR(
@@ -86,7 +56,7 @@ async function createWorkflowPR(
 	repo: string,
 	issueNumber: number,
 	defaultBranch: string
-): Promise<WorkflowResult> {
+): Promise<SetupResult> {
 	const existingPR = await findOpenPR(octokit, owner, repo, WORKFLOW_BRANCH);
 	if (existingPR) {
 		await createComment(
@@ -98,9 +68,9 @@ async function createWorkflowPR(
 		);
 
 		return {
-			success: false,
-			message: `PR already exists: #${existingPR.number}`,
+			exists: false,
 			prUrl: existingPR.url,
+			prNumber: existingPR.number,
 		};
 	}
 
@@ -176,8 +146,8 @@ Or use the slash command:
 	);
 
 	return {
-		success: true,
-		message: `Created PR #${prNumber}`,
+		exists: false,
 		prUrl,
+		prNumber,
 	};
 }

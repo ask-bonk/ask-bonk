@@ -6,23 +6,8 @@ import type {
 } from "@octokit/webhooks-types";
 import { DEFAULT_MODEL, type Env, type EventContext, type ReviewCommentContext, type ScheduledEventContext, type WorkflowDispatchContext, type ScheduleEventPayload, type WorkflowDispatchPayload } from "./types";
 
-const BOT_MENTION = "@ask-bonk";
-const BOT_COMMAND = "/bonk";
-const MENTION_PATTERN = new RegExp(`(?:^|\\s)(?:${BOT_MENTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}|${BOT_COMMAND.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})(?=$|\\s)`);
-
-export function hasMention(body: string): boolean {
-	return MENTION_PATTERN.test(body.trim());
-}
-
 export function extractPrompt(body: string, reviewContext?: ReviewCommentContext): string {
 	const trimmed = body.trim();
-
-	if (trimmed === BOT_MENTION || trimmed === BOT_COMMAND) {
-		if (reviewContext) {
-			return `Review this code change and suggest improvements for the commented lines:\n\nFile: ${reviewContext.file}\nLines: ${reviewContext.line}\n\n${reviewContext.diffHunk}`;
-		}
-		return "Summarize this thread";
-	}
 
 	if (reviewContext) {
 		return `${trimmed}\n\nContext: You are reviewing a comment on file "${reviewContext.file}" at line ${reviewContext.line}.\n\nDiff context:\n${reviewContext.diffHunk}`;
@@ -57,16 +42,13 @@ export function isForkPR(payload: IssueCommentEvent | PullRequestReviewCommentEv
 	return false;
 }
 
+// Parse issue comment events - no mention filtering, that's handled by the action
 export function parseIssueCommentEvent(payload: IssueCommentEvent): {
 	context: Omit<EventContext, "env">;
 	prompt: string;
 	triggerCommentId: number;
 } | null {
 	if (payload.action !== "created") {
-		return null;
-	}
-
-	if (!hasMention(payload.comment.body)) {
 		return null;
 	}
 
@@ -88,6 +70,7 @@ export function parseIssueCommentEvent(payload: IssueCommentEvent): {
 	};
 }
 
+// Parse PR review comment events - no mention filtering, that's handled by the action
 export function parsePRReviewCommentEvent(payload: PullRequestReviewCommentEvent): {
 	context: Omit<EventContext, "env">;
 	prompt: string;
@@ -95,10 +78,6 @@ export function parsePRReviewCommentEvent(payload: PullRequestReviewCommentEvent
 	reviewContext: ReviewCommentContext;
 } | null {
 	if (payload.action !== "created") {
-		return null;
-	}
-
-	if (!hasMention(payload.comment.body)) {
 		return null;
 	}
 
@@ -128,6 +107,7 @@ export function parsePRReviewCommentEvent(payload: PullRequestReviewCommentEvent
 	};
 }
 
+// Parse PR review events - no mention filtering, that's handled by the action
 export function parsePRReviewEvent(payload: PullRequestReviewEvent): {
 	context: Omit<EventContext, "env">;
 	prompt: string;
@@ -137,7 +117,7 @@ export function parsePRReviewEvent(payload: PullRequestReviewEvent): {
 		return null;
 	}
 
-	if (!payload.review.body || !hasMention(payload.review.body)) {
+	if (!payload.review.body) {
 		return null;
 	}
 

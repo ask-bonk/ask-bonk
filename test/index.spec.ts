@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-	hasMention,
 	extractPrompt,
 	parseIssueCommentEvent,
 	parsePRReviewCommentEvent,
@@ -37,42 +36,17 @@ const mockEnv: Env = {
 	DEFAULT_MODEL: "anthropic/claude-opus-4-5",
 };
 
-describe("Mention Detection", () => {
-	it("detects @ask-bonk mention", () => {
-		expect(hasMention("@ask-bonk fix this")).toBe(true);
-	});
-
-	it("detects /bonk command", () => {
-		expect(hasMention("/bonk fix this")).toBe(true);
-	});
-
-	it("detects mention in middle of text", () => {
-		expect(hasMention("hey @ask-bonk can you help")).toBe(true);
-	});
-
-	it("does not match partial mentions", () => {
-		expect(hasMention("@ask-bonker")).toBe(false);
-	});
-
-	it("does not match without mention", () => {
-		expect(hasMention("please fix this bug")).toBe(false);
-	});
-
-	it("works with either trigger", () => {
-		expect(hasMention("@ask-bonk help")).toBe(true);
-		expect(hasMention("/bonk help")).toBe(true);
-	});
-});
-
 describe("Prompt Extraction", () => {
 	it("extracts full prompt", () => {
 		const prompt = extractPrompt("@ask-bonk fix the type error");
 		expect(prompt).toBe("@ask-bonk fix the type error");
 	});
 
-	it("returns default for bare mention", () => {
+	it("returns prompt as-is without special handling for bare mention", () => {
+		// Note: extractPrompt no longer has special handling for bare mentions
+		// The action handles mentions; this just extracts the prompt
 		const prompt = extractPrompt("@ask-bonk");
-		expect(prompt).toBe("Summarize this thread");
+		expect(prompt).toBe("@ask-bonk");
 	});
 
 	it("includes review context when provided", () => {
@@ -114,7 +88,8 @@ describe("Issue Comment Event Parsing", () => {
 		expect(result).toBeNull();
 	});
 
-	it("returns null for comment without mention", () => {
+	it("parses comments without mention (filtering is done by action)", () => {
+		// Note: mention filtering is now done by the GitHub Action, not the event parser
 		const payload = {
 			...issueCommentFixture,
 			comment: { ...issueCommentFixture.comment, body: "just a regular comment" },
@@ -122,7 +97,9 @@ describe("Issue Comment Event Parsing", () => {
 		const result = parseIssueCommentEvent(
 			payload as unknown as IssueCommentEvent
 		);
-		expect(result).toBeNull();
+		// Should parse - action will filter based on mentions
+		expect(result).not.toBeNull();
+		expect(result?.prompt).toBe("just a regular comment");
 	});
 });
 
@@ -472,6 +449,3 @@ describe("Cross-Repo Token Exchange Input Validation", () => {
 		expect("error" in result).toBe(true);
 	});
 });
-
-
-

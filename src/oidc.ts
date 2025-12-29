@@ -68,7 +68,7 @@ export function extractRepoFromClaims(claims: GitHubActionsJWTClaims): { owner: 
 }
 
 // Gets or looks up the installation ID for a repository
-async function getInstallationId(env: Env, owner: string, repo: string): Promise<number | null> {
+export async function getInstallationId(env: Env, owner: string, repo: string): Promise<number | null> {
 	const repoKey = `${owner}/${repo}`;
 
 	// Check cache first

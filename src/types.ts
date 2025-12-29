@@ -228,3 +228,33 @@ export interface WorkflowDispatchPayload {
 	sender: { login: string };
 	workflow?: string;
 }
+
+// Request to start tracking a workflow run (POST /api/github/track)
+export interface TrackWorkflowRequest {
+	owner: string;
+	repo: string;
+	run_id: number;
+	run_url: string;
+	issue_number: number;
+	created_at: string; // RFC3339
+	// For creating reactions - set based on event type
+	comment_id?: number; // For issue_comment events
+	review_comment_id?: number; // For pull_request_review_comment events
+	issue_id?: number; // For issues events (react to the issue itself)
+}
+
+// Request to finalize a tracked workflow run (PUT /api/github/track)
+export interface FinalizeWorkflowRequest {
+	owner: string;
+	repo: string;
+	run_id: number;
+	status: 'success' | 'failure' | 'cancelled' | 'skipped';
+}
+
+// Request to check/create workflow file (POST /api/github/setup)
+export interface SetupWorkflowRequest {
+	owner: string;
+	repo: string;
+	issue_number: number;
+	default_branch: string;
+}

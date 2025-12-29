@@ -9,33 +9,19 @@ export interface CheckStatusPayload {
 	createdAt: number;
 }
 
-export interface PendingWorkflow {
-	issueNumber: number;
-	actor: string;
-	timestamp: string;
-	createdAt: number;
-}
-
 interface RepoAgentState {
 	installationId: number;
-	// Pending workflows waiting for workflow_run event, keyed by actor:timestamp
-	pendingWorkflows: Record<string, PendingWorkflow>;
+	// Active workflow runs being tracked, keyed by run ID
+	activeRuns: Record<number, CheckStatusPayload>;
 }
 
-const POLL_INTERVAL_SECONDS = 30;
+// Poll every 5 minutes as a safety net (action calls finalizeRun on completion)
+const POLL_INTERVAL_SECONDS = 300;
 const MAX_TRACKING_TIME_MS = 30 * 60 * 1000;
-const PENDING_WORKFLOW_CLEANUP_SECONDS = 600;
-
-// Removes a key from a record, returning a new object without mutation
-function omitKey<T extends Record<string, unknown>>(obj: T, key: string): Omit<T, typeof key> {
-	const copy = { ...obj };
-	delete copy[key];
-	return copy;
-}
 
 // Tracks workflow runs per repo. ID format: "{owner}/{repo}"
 export class RepoAgent extends Agent<Env, RepoAgentState> {
-	initialState: RepoAgentState = { installationId: 0, pendingWorkflows: {} };
+	initialState: RepoAgentState = { installationId: 0, activeRuns: {} };
 
 	private get owner(): string {
 		return this.name.split('/')[0] ?? '';
@@ -49,51 +35,6 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
 		this.setState({ ...this.state, installationId: id });
 	}
 
-	async addPendingWorkflow(actor: string, timestamp: string, issueNumber: number): Promise<void> {
-		const logPrefix = `[${this.owner}/${this.repo}]`;
-		const key = `${actor}:${timestamp}`;
-		const pending: PendingWorkflow = {
-			issueNumber,
-			actor,
-			timestamp,
-			createdAt: Date.now(),
-		};
-
-		const pendingWorkflows = { ...this.state.pendingWorkflows, [key]: pending };
-		this.setState({ ...this.state, pendingWorkflows });
-
-		console.info(`${logPrefix} Added pending workflow for issue #${issueNumber} (${key})`);
-
-		await this.schedule<{ key: string }>(PENDING_WORKFLOW_CLEANUP_SECONDS, 'cleanupPendingWorkflow', { key });
-	}
-
-	async consumePendingWorkflow(actor: string): Promise<PendingWorkflow | null> {
-		const logPrefix = `[${this.owner}/${this.repo}]`;
-
-		const entry = Object.entries(this.state.pendingWorkflows).find(
-			([, pending]) => pending.actor === actor
-		);
-
-		if (!entry) {
-			return null;
-		}
-
-		const [key, pending] = entry;
-		this.setState({ ...this.state, pendingWorkflows: omitKey(this.state.pendingWorkflows, key) });
-
-		console.info(`${logPrefix} Consumed pending workflow for issue #${pending.issueNumber} (${key})`);
-		return pending;
-	}
-
-	async cleanupPendingWorkflow(payload: { key: string }): Promise<void> {
-		const logPrefix = `[${this.owner}/${this.repo}]`;
-
-		if (this.state.pendingWorkflows[payload.key]) {
-			this.setState({ ...this.state, pendingWorkflows: omitKey(this.state.pendingWorkflows, payload.key) });
-			console.info(`${logPrefix} Cleaned up expired pending workflow: ${payload.key}`);
-		}
-	}
-
 	async trackRun(runId: number, runUrl: string, issueNumber: number): Promise<void> {
 		const logPrefix = `[${this.owner}/${this.repo}]`;
 		console.info(`${logPrefix} Tracking run ${runId} for issue #${issueNumber}`);
@@ -105,19 +46,55 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
 			createdAt: Date.now(),
 		};
 
+		// Store in activeRuns state
+		const activeRuns = { ...this.state.activeRuns, [runId]: payload };
+		this.setState({ ...this.state, activeRuns });
+
+		// Schedule polling as safety net
 		await this.schedule<CheckStatusPayload>(POLL_INTERVAL_SECONDS, 'checkWorkflowStatus', payload);
 		console.info(`${logPrefix} Scheduled status check in ${POLL_INTERVAL_SECONDS}s`);
+	}
+
+	async finalizeRun(runId: number, status: string): Promise<void> {
+		const logPrefix = `[${this.owner}/${this.repo}]`;
+		console.info(`${logPrefix} Finalizing run ${runId} with status: ${status}`);
+
+		const run = this.state.activeRuns[runId];
+		if (!run) {
+			console.info(`${logPrefix} Run ${runId} not found in activeRuns, may have already been finalized`);
+			return;
+		}
+
+		// Remove from activeRuns (this effectively "cancels" the polling)
+		const { [runId]: _, ...remainingRuns } = this.state.activeRuns;
+		this.setState({ ...this.state, activeRuns: remainingRuns });
+
+		// Post failure comment if needed
+		if (status !== 'success' && status !== 'skipped') {
+			await this.postFailureComment(run.runUrl, run.issueNumber, status);
+		} else {
+			console.info(`${logPrefix} Run ${runId} completed with ${status} - no failure comment needed`);
+		}
 	}
 
 	async checkWorkflowStatus(payload: CheckStatusPayload): Promise<void> {
 		const logPrefix = `[${this.owner}/${this.repo}]`;
 		const { runId, runUrl, issueNumber, createdAt } = payload;
 
+		// Check if run is still being tracked (may have been finalized by action)
+		if (!this.state.activeRuns[runId]) {
+			console.info(`${logPrefix} Run ${runId} already finalized, skipping poll`);
+			return;
+		}
+
 		console.info(`${logPrefix} Checking status for run ${runId}`);
 
 		const elapsed = Date.now() - createdAt;
 		if (elapsed > MAX_TRACKING_TIME_MS) {
 			console.warn(`${logPrefix} Run ${runId} timed out after ${elapsed}ms`);
+			// Remove from activeRuns
+			const { [runId]: _, ...remainingRuns } = this.state.activeRuns;
+			this.setState({ ...this.state, activeRuns: remainingRuns });
 			await this.postFailureComment(runUrl, issueNumber, 'timeout');
 			return;
 		}
@@ -137,6 +114,10 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
 			console.info(`${logPrefix} Run ${runId} status: ${status.status}, conclusion: ${status.conclusion}`);
 
 			if (status.status === 'completed') {
+				// Remove from activeRuns
+				const { [runId]: _, ...remainingRuns } = this.state.activeRuns;
+				this.setState({ ...this.state, activeRuns: remainingRuns });
+
 				// On success, OpenCode posts the response - we stay silent
 				if (status.conclusion !== 'success') {
 					await this.postFailureComment(runUrl, issueNumber, status.conclusion);
