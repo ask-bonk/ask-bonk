@@ -119,6 +119,7 @@ runs:
               return;
             }
 
+            // Parse CODEOWNERS: collect individual users and team patterns (@org/team)
             const owners = new Set();
             const teamPatterns = [];
             for (const line of codeownersContent.split('\n')) {
@@ -127,8 +128,10 @@ runs:
               const mentions = trimmed.match(/@[\w-]+(?:\/[\w-]+)?/g) || [];
               for (const mention of mentions) {
                 if (mention.includes('/')) {
+                  // Cross-org teams (@other-org/team) are allowed if repo admin put them in CODEOWNERS
                   teamPatterns.push(mention.substring(1));
                 } else {
+                  // GitHub usernames are case-insensitive
                   owners.add(mention.substring(1).toLowerCase());
                 }
               }
@@ -141,6 +144,8 @@ runs:
               return;
             }
 
+            // Check team membership. Stale/non-existent teams 404 and are skipped.
+            // GitHub API normalizes team_slug case, so no lowercase needed.
             for (const teamPath of teamPatterns) {
               const [org, team] = teamPath.split('/');
               try {
@@ -152,12 +157,14 @@ runs:
                 core.info(`User ${actor} is a member of team @${teamPath}`);
                 return;
               } catch (e) {
+                // 404 = not a member or team doesn't exist; continue checking other patterns
                 if (e.status !== 404) {
                   core.warning(`Could not check team membership for @${teamPath}: ${e.message}`);
                 }
               }
             }
 
+            // Fail-closed: no matching user or team membership found
             core.setFailed(`User ${actor} is not listed in CODEOWNERS`);
           } else if (requiredPermission === 'admin') {
             if (permission !== 'admin') {
