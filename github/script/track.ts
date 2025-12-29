@@ -1,0 +1,90 @@
+// Start tracking a workflow run and create reaction
+// Called by the GitHub Action before running OpenCode
+
+import { getContext, getOidcToken, getApiBaseUrl, core } from './context';
+
+interface TrackPayload {
+	owner: string;
+	repo: string;
+	run_id: number;
+	run_url: string;
+	issue_number: number;
+	created_at: string;
+	comment_id?: number;
+	review_comment_id?: number;
+	issue_id?: number;
+}
+
+interface TrackResponse {
+	ok?: boolean;
+	error?: string;
+}
+
+async function main() {
+	const context = getContext();
+	const { owner, repo } = context.repo;
+
+	let oidcToken: string;
+	try {
+		oidcToken = await getOidcToken();
+	} catch (error) {
+		core.setFailed(`Failed to get OIDC token: ${error}`);
+	}
+
+	const apiBase = getApiBaseUrl();
+
+	// Build payload
+	const payload: TrackPayload = {
+		owner,
+		repo,
+		run_id: context.runId,
+		run_url: context.runUrl,
+		issue_number: context.issue?.number || 0,
+		created_at: context.comment?.createdAt || new Date().toISOString(),
+	};
+
+	// Add reaction target based on event type
+	switch (context.eventName) {
+		case 'issue_comment':
+			if (context.comment?.id) {
+				payload.comment_id = context.comment.id;
+			}
+			break;
+		case 'pull_request_review_comment':
+			if (context.comment?.id) {
+				payload.review_comment_id = context.comment.id;
+			}
+			break;
+		case 'issues':
+			if (context.issue?.id) {
+				payload.issue_id = context.issue.id;
+			}
+			break;
+	}
+
+	const response = await fetch(`${apiBase}/api/github/track`, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${oidcToken}`,
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify(payload),
+	});
+
+	if (!response.ok) {
+		const text = await response.text();
+		core.setFailed(`Failed to track Bonk run: ${text}`);
+	}
+
+	const data = (await response.json()) as TrackResponse;
+
+	if (data.error) {
+		core.setFailed(`Track failed: ${data.error}`);
+	}
+
+	core.info(`Successfully started tracking run ${context.runId}`);
+}
+
+main().catch((error) => {
+	core.setFailed(`Unexpected error: ${error}`);
+});

@@ -171,6 +171,10 @@ runs:
             core.setFailed(`Unknown permission level: ${requiredPermission}. Use 'admin', 'write', 'any', or 'CODEOWNERS'`);
           }
 
+    - name: Setup bun
+      if: steps.mentions.outputs.skip != 'true'
+      uses: oven-sh/setup-bun@v2
+
     - name: Ensure workflow exists
       if: steps.mentions.outputs.skip != 'true'
       id: setup
@@ -181,7 +185,7 @@ runs:
         GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
         ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
         DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-      run: ${{ github.action_path }}/script/setup.sh
+      run: bun run ${{ github.action_path }}/script/setup.ts
 
     - name: Get opencode version
       if: steps.mentions.outputs.skip != 'true' && steps.setup.outputs.skip != 'true'
@@ -258,7 +262,7 @@ runs:
         COMMENT_CREATED_AT: ${{ github.event.comment.created_at }}
         ISSUE_CREATED_AT: ${{ github.event.issue.created_at }}
         ISSUE_ID: ${{ github.event.issue.id }}
-      run: ${{ github.action_path }}/script/track.sh
+      run: bun run ${{ github.action_path }}/script/track.ts
 
     - name: Run opencode
       if: steps.mentions.outputs.skip != 'true' && steps.setup.outputs.skip != 'true'
@@ -286,5 +290,7 @@ runs:
         GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
         GITHUB_RUN_ID: ${{ github.run_id }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
         OPENCODE_STATUS: ${{ steps.opencode.outcome }}
-      run: ${{ github.action_path }}/script/finalize.sh
+      run: bun run ${{ github.action_path }}/script/finalize.ts
