@@ -6,6 +6,9 @@ import { hasWriteAccess } from './github';
 
 // GitHub's OIDC token issuer for Actions
 const GITHUB_ACTIONS_ISSUER = 'https://token.actions.githubusercontent.com';
+
+// TTL for cached installation IDs (30 minutes)
+export const APP_INSTALLATION_CACHE_TTL_SECS = 1800;
 const JWKS = createRemoteJWKSet(new URL(`${GITHUB_ACTIONS_ISSUER}/.well-known/jwks`));
 
 // JWT claims from GitHub Actions OIDC token
@@ -91,7 +94,7 @@ export async function getInstallationId(env: Env, owner: string, repo: string): 
 		const installationId = response.data.id;
 
 		// Cache for future use
-		await env.APP_INSTALLATIONS.put(repoKey, String(installationId));
+		await env.APP_INSTALLATIONS.put(repoKey, String(installationId), { expirationTtl: APP_INSTALLATION_CACHE_TTL_SECS });
 		return installationId;
 	} catch {
 		return null;
