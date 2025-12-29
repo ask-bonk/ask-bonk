@@ -26,6 +26,7 @@ async function main() {
 		oidcToken = await getOidcToken();
 	} catch (error) {
 		core.setFailed(`Failed to get OIDC token: ${error}`);
+		return; // setFailed exits, but explicit return for type safety
 	}
 
 	const apiBase = getApiBaseUrl();
@@ -47,12 +48,14 @@ async function main() {
 	if (!response.ok) {
 		const text = await response.text();
 		core.setFailed(`Setup request failed: ${text}`);
+		return;
 	}
 
 	const data = (await response.json()) as SetupResponse;
 
 	if (data.error) {
 		core.setFailed(`Setup failed: ${data.error}`);
+		return;
 	}
 
 	if (data.exists) {

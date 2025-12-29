@@ -24,11 +24,17 @@ async function main() {
 	const context = getContext();
 	const { owner, repo } = context.repo;
 
+	if (!context.issue?.number) {
+		core.info('No issue number found, skipping tracking');
+		return;
+	}
+
 	let oidcToken: string;
 	try {
 		oidcToken = await getOidcToken();
 	} catch (error) {
 		core.setFailed(`Failed to get OIDC token: ${error}`);
+		return;
 	}
 
 	const apiBase = getApiBaseUrl();
@@ -39,7 +45,7 @@ async function main() {
 		repo,
 		run_id: context.runId,
 		run_url: context.runUrl,
-		issue_number: context.issue?.number || 0,
+		issue_number: context.issue.number,
 		created_at: context.comment?.createdAt || new Date().toISOString(),
 	};
 
@@ -74,12 +80,14 @@ async function main() {
 	if (!response.ok) {
 		const text = await response.text();
 		core.setFailed(`Failed to track Bonk run: ${text}`);
+		return;
 	}
 
 	const data = (await response.json()) as TrackResponse;
 
 	if (data.error) {
 		core.setFailed(`Track failed: ${data.error}`);
+		return;
 	}
 
 	core.info(`Successfully started tracking run ${context.runId}`);
