@@ -23,6 +23,9 @@ export interface Env {
 	ASK_SECRET?: string;
 	// Allowed orgs/users for GitHub App installation - JSON array binding
 	ALLOWED_ORGS?: string[];
+	// Analytics Engine query API credentials (for /stats endpoint)
+	ACCOUNT_ID?: string;
+	AE_API_TOKEN?: string;
 }
 
 // Request body for /ask endpoint

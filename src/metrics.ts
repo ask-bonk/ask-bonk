@@ -1,4 +1,5 @@
 import type { Env } from './types';
+import eventsPerRepoQuery from '../ae_queries/events_per_repo.sql?raw';
 
 // Event types for categorizing metrics
 export type EventType = 'webhook' | 'track' | 'finalize' | 'setup' | 'installation' | 'failure_comment';
@@ -33,3 +34,58 @@ export function emitMetric(env: Env, event: MetricEvent): void {
 		doubles: [event.issueNumber ?? 0, event.runId ?? 0, event.durationMs ?? 0, event.isPrivate ? 1 : 0, event.isPullRequest ? 1 : 0],
 	});
 }
+
+// Row shape returned by events_per_repo.sql query
+interface EventsPerRepoRow {
+	repo: string;
+	event_type: string;
+	event_count: number;
+}
+
+// Query Analytics Engine SQL API
+// https://developers.cloudflare.com/analytics/analytics-engine/worker-querying/
+export async function queryAnalyticsEngine(env: Env, query: string): Promise<Record<string, unknown>[]> {
+	const { ACCOUNT_ID, AE_API_TOKEN } = env;
+	if (!ACCOUNT_ID || !AE_API_TOKEN) {
+		throw new Error('Missing ACCOUNT_ID or AE_API_TOKEN');
+	}
+
+	const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/analytics_engine/sql`, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${AE_API_TOKEN}`,
+			'Content-Type': 'text/plain',
+		},
+		body: query,
+	});
+
+	if (!response.ok) {
+		const text = await response.text();
+		throw new Error(`Analytics Engine query failed: ${response.status} ${text}`);
+	}
+
+	const result = (await response.json()) as { data?: Record<string, unknown>[] };
+	return result.data ?? [];
+}
+
+// Render ASCII bar chart for events per repo
+export function renderBarChart(data: EventsPerRepoRow[], title: string): string {
+	if (!data.length) return 'No data available';
+
+	const maxCount = Math.max(...data.map((d) => d.event_count));
+	const maxLabel = Math.max(...data.map((d) => `${d.repo} (${d.event_type})`.length));
+	const barWidth = 40;
+
+	const header = `${title}\n${'─'.repeat(maxLabel + barWidth + 10)}\n`;
+	const rows = data.map((row) => {
+		const label = `${row.repo} (${row.event_type})`.padEnd(maxLabel);
+		const barLen = maxCount > 0 ? Math.round((row.event_count / maxCount) * barWidth) : 0;
+		const bar = '█'.repeat(barLen);
+		return `${label} | ${bar.padEnd(barWidth)} | ${row.event_count}`;
+	});
+
+	return header + rows.join('\n');
+}
+
+// Bundled SQL query for events per repo
+export { eventsPerRepoQuery };
