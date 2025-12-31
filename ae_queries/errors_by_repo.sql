@@ -6,7 +6,7 @@ SELECT
   blob5 AS error_code,
   COUNT() AS error_count,
   MAX(timestamp) AS last_occurrence
-FROM BONK_EVENTS
+FROM bonk_events
 WHERE blob3 = 'error'
   AND timestamp > NOW() - INTERVAL '24' HOUR
 GROUP BY repo, event_type, error_code
