@@ -3,7 +3,9 @@ declare module "*.hbs" {
 	export default content;
 }
 
-declare module "*.sql?raw" {
+// Wrangler uses "rules" with type: "Text" for non-JS assets (not Vite's ?raw suffix)
+// See: wrangler.jsonc rules configuration
+declare module "*.sql" {
 	const content: string;
 	export default content;
 }

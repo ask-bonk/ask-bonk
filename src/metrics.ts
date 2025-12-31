@@ -1,5 +1,5 @@
 import type { Env } from './types';
-import eventsPerRepoQuery from '../ae_queries/events_per_repo.sql?raw';
+import eventsPerRepoQuery from '../ae_queries/events_per_repo.sql';
 
 // Event types for categorizing metrics
 export type EventType = 'webhook' | 'track' | 'finalize' | 'setup' | 'installation' | 'failure_comment';
