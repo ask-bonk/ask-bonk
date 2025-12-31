@@ -14,7 +14,7 @@ import {
 import type { ScheduleEventPayload, WorkflowDispatchPayload } from './types';
 import { parseIssueCommentEvent, parseIssuesEvent, parsePRReviewCommentEvent, parseScheduleEvent, parseWorkflowDispatchEvent } from './events';
 import { ensureWorkflowFile } from './workflow';
-import { handleGetInstallation, handleExchangeToken, handleExchangeTokenForRepo, handleExchangeTokenWithPAT, validateGitHubOIDCToken, extractRepoFromClaims, getInstallationId, APP_INSTALLATION_CACHE_TTL_SECS } from './oidc';
+import { handleGetInstallation, handleExchangeToken, handleExchangeTokenForRepo, handleExchangeTokenWithPAT, validateGitHubOIDCToken, extractRepoFromClaims, getInstallationId } from './oidc';
 import { RepoAgent } from './agent';
 import { runAsk } from './sandbox';
 import { getAgentByName } from 'agents';
@@ -84,13 +84,12 @@ ask.post('/', async (c) => {
 	const repoKey = `${body.owner}/${body.repo}`;
 	const logPrefix = `[${repoKey}][ask:${askId}]`;
 
-	// Look up installation ID for this repo
-	const installationIdStr = await c.env.APP_INSTALLATIONS.get(repoKey);
-	if (!installationIdStr) {
+	// Look up installation ID for this repo (uses cache, falls back to GitHub API)
+	const installationId = await getInstallationId(c.env, body.owner, body.repo);
+	if (!installationId) {
 		console.error(`${logPrefix} No GitHub App installation found`);
 		return c.json({ error: `No GitHub App installation found for ${repoKey}` }, 404);
 	}
-	const installationId = parseInt(installationIdStr, 10);
 
 	try {
 		const stream = await runAsk(c.env, installationId, body);
@@ -421,16 +420,10 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
 
 	console.info(`Webhook: ${getWebhookLogContext(event)}`);
 
-	// Cache installation ID for future API calls
+	// Installation ID caching is handled by getInstallationId() in oidc.ts on cache miss.
+	// This avoids redundant KV writes on every webhook (see issue #52).
 	const payload = event.payload as Record<string, unknown>;
-	const installation = payload.installation as { id?: number } | undefined;
 	const repository = payload.repository as { owner?: { login?: string }; name?: string } | undefined;
-	if (installation?.id && repository?.owner?.login && repository?.name) {
-		const repoKey = `${repository.owner.login}/${repository.name}`;
-		await env.APP_INSTALLATIONS.put(repoKey, String(installation.id), { expirationTtl: APP_INSTALLATION_CACHE_TTL_SECS });
-		console.info(`Stored installation ${installation.id} for ${repoKey}`);
-	}
-
 	const repoKey = repository?.owner?.login && repository?.name ? `${repository.owner.login}/${repository.name}` : 'unknown/unknown';
 	const sender = (payload.sender as { login?: string })?.login;
 	const issue = payload.issue as { number?: number } | undefined;
