@@ -5,7 +5,7 @@ SELECT
   blob3 AS status,
   COUNT() AS count,
   COUNT() * 100.0 / SUM(COUNT()) OVER (PARTITION BY index1) AS percentage
-FROM BONK_EVENTS
+FROM bonk_events
 WHERE blob1 = 'finalize'
   AND timestamp > NOW() - INTERVAL '7' DAY
 GROUP BY repo, status
