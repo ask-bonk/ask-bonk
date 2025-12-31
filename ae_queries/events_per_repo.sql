@@ -4,7 +4,7 @@ SELECT
   index1 AS repo,
   blob1 AS event_type,
   COUNT() AS event_count
-FROM BONK_EVENTS
+FROM bonk_events
 WHERE timestamp > NOW() - INTERVAL '7' DAY
 GROUP BY repo, event_type
 ORDER BY event_count DESC
