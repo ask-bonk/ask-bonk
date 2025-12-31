@@ -12,6 +12,8 @@ export interface Env {
 	REPO_AGENT: AgentNamespace<RepoAgent>;
 	APP_INSTALLATIONS: KVNamespace;
 	RATE_LIMITER: RateLimit;
+	// Workers Analytics Engine for metrics
+	BONK_EVENTS: AnalyticsEngineDataset;
 	GITHUB_APP_ID: string;
 	GITHUB_APP_PRIVATE_KEY: string;
 	GITHUB_WEBHOOK_SECRET: string;

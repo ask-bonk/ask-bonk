@@ -1,0 +1,14 @@
+-- Errors by repo with error classification (last 24 hours)
+-- Shows error breakdown with error codes for debugging
+SELECT
+  index1 AS repo,
+  blob1 AS event_type,
+  blob5 AS error_code,
+  COUNT() AS error_count,
+  MAX(timestamp) AS last_occurrence
+FROM BONK_EVENTS
+WHERE blob3 = 'error'
+  AND timestamp > NOW() - INTERVAL '24' HOUR
+GROUP BY repo, event_type, error_code
+ORDER BY error_count DESC
+LIMIT 50

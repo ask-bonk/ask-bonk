@@ -69,4 +69,10 @@
 			},
 		},
 	],
+	"analytics_engine_datasets": [
+		{
+			"binding": "BONK_EVENTS",
+			"dataset": "bonk_events",
+		},
+	],
 }

@@ -18,6 +18,7 @@ import { handleGetInstallation, handleExchangeToken, handleExchangeTokenForRepo,
 import { RepoAgent } from './agent';
 import { runAsk } from './sandbox';
 import { getAgentByName } from 'agents';
+import { emitMetric } from './metrics';
 
 export { Sandbox } from '@cloudflare/sandbox';
 export { RepoAgent };
@@ -221,10 +222,23 @@ apiGithub.post('/setup', async (c) => {
 		const result = await ensureWorkflowFile(octokit, body.owner, body.repo, body.issue_number, body.default_branch);
 
 		console.info(`${logPrefix} Setup result: exists=${result.exists}, prUrl=${result.prUrl ?? 'none'}`);
+		emitMetric(c.env, {
+			repo: `${body.owner}/${body.repo}`,
+			eventType: 'setup',
+			status: 'success',
+			issueNumber: body.issue_number,
+		});
 		return c.json(result);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
 		console.error(`${logPrefix} Setup failed:`, message);
+		emitMetric(c.env, {
+			repo: `${body.owner}/${body.repo}`,
+			eventType: 'setup',
+			status: 'error',
+			errorCode: message.slice(0, 100),
+			issueNumber: body.issue_number,
+		});
 		return c.json({ error: message }, 500);
 	}
 });
@@ -290,10 +304,25 @@ apiGithub.post('/track', async (c) => {
 		await agent.trackRun(body.run_id, body.run_url, body.issue_number);
 
 		console.info(`${logPrefix} Started tracking run ${body.run_id}`);
+		emitMetric(c.env, {
+			repo: `${body.owner}/${body.repo}`,
+			eventType: 'track',
+			status: 'success',
+			issueNumber: body.issue_number,
+			runId: body.run_id,
+		});
 		return c.json({ ok: true });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
 		console.error(`${logPrefix} Track failed:`, message);
+		emitMetric(c.env, {
+			repo: `${body.owner}/${body.repo}`,
+			eventType: 'track',
+			status: 'error',
+			errorCode: message.slice(0, 100),
+			issueNumber: body.issue_number,
+			runId: body.run_id,
+		});
 		return c.json({ error: message }, 500);
 	}
 });
@@ -345,10 +374,23 @@ apiGithub.put('/track', async (c) => {
 		await agent.finalizeRun(body.run_id, body.status);
 
 		console.info(`${logPrefix} Finalized run ${body.run_id} with status ${body.status}`);
+		emitMetric(c.env, {
+			repo: `${body.owner}/${body.repo}`,
+			eventType: 'finalize',
+			status: body.status,
+			runId: body.run_id,
+		});
 		return c.json({ ok: true });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
 		console.error(`${logPrefix} Finalize failed:`, message);
+		emitMetric(c.env, {
+			repo: `${body.owner}/${body.repo}`,
+			eventType: 'finalize',
+			status: 'error',
+			errorCode: message.slice(0, 100),
+			runId: body.run_id,
+		});
 		// Always return 200 for finalize - errors are logged but don't fail the action
 		return c.json({ ok: true, warning: message });
 	}
@@ -389,11 +431,20 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
 		console.info(`Stored installation ${installation.id} for ${repoKey}`);
 	}
 
+	const repoKey = repository?.owner?.login && repository?.name ? `${repository.owner.login}/${repository.name}` : 'unknown/unknown';
+	const sender = (payload.sender as { login?: string })?.login;
+	const issue = payload.issue as { number?: number } | undefined;
+	const pr = payload.pull_request as { number?: number } | undefined;
+	const issueNumber = issue?.number ?? pr?.number;
+	const isPrivate = (repository as { private?: boolean })?.private;
+	const isPullRequest = !!pr;
+
 	try {
 		// Handle meta events (installation) before other checks - these may delete installations
 		const isMetaEvent = META_EVENTS.includes(event.name as (typeof META_EVENTS)[number]);
 		if (isMetaEvent) {
 			await handleMetaEvent(event.name, event.payload, env);
+			emitMetric(env, { repo: repoKey, eventType: 'installation', eventSubtype: event.name, status: 'success', actor: sender });
 			return new Response('OK', { status: 200 });
 		}
 
@@ -401,6 +452,7 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
 		const owner = repository?.owner?.login;
 		if (owner && !isAllowedOrg(owner, env)) {
 			console.info(`[${owner}] Org not in allowed list, skipping`);
+			emitMetric(env, { repo: repoKey, eventType: 'webhook', eventSubtype: event.name, status: 'skipped', actor: sender });
 			return new Response('OK', { status: 200 });
 		}
 
@@ -418,9 +470,30 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
 			await handleRepoEvent(event.name, event.payload, env);
 		}
 
+		emitMetric(env, {
+			repo: repoKey,
+			eventType: 'webhook',
+			eventSubtype: event.name,
+			status: 'success',
+			actor: sender,
+			issueNumber,
+			isPrivate,
+			isPullRequest,
+		});
 		return new Response('OK', { status: 200 });
 	} catch (error) {
 		console.error(`Webhook error [${getWebhookLogContext(event)}]:`, error);
+		emitMetric(env, {
+			repo: repoKey,
+			eventType: 'webhook',
+			eventSubtype: event.name,
+			status: 'error',
+			actor: sender,
+			errorCode: error instanceof Error ? error.message.slice(0, 100) : 'unknown',
+			issueNumber,
+			isPrivate,
+			isPullRequest,
+		});
 		return new Response('Internal error', { status: 500 });
 	}
 }
