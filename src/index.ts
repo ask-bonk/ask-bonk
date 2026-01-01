@@ -544,7 +544,8 @@ async function handleRepoEvent(eventName: string, payload: unknown, _env: Env): 
 }
 
 // Meta events: GitHub App lifecycle events (installation)
-// Checks if the installation is on an allowed org, and deletes it if not
+// Handles GitHub App installation lifecycle events (created, deleted)
+// Auto-uninstalls from orgs not in ALLOWED_ORGS
 async function handleMetaEvent(eventName: string, payload: unknown, env: Env): Promise<void> {
 	if (eventName !== 'installation') return;
 
@@ -553,15 +554,21 @@ async function handleMetaEvent(eventName: string, payload: unknown, env: Env): P
 		installation?: { id?: number; account?: { login?: string } };
 	};
 
-	// Only handle 'created' action (new installation)
-	if (p.action !== 'created') return;
-
 	const installationId = p.installation?.id;
 	const owner = p.installation?.account?.login;
 	if (!installationId || !owner) return;
 
+	// Log all installation events
+	if (p.action === 'deleted') {
+		console.info(`[${owner}] Installation ${installationId} removed by user`);
+		return;
+	}
+
+	if (p.action !== 'created') return;
+
+	// New installation - check if allowed
 	if (isAllowedOrg(owner, env)) {
-		console.info(`[${owner}] Installation ${installationId} allowed`);
+		console.info(`[${owner}] Installation ${installationId} created and allowed`);
 		return;
 	}
 
@@ -569,7 +576,7 @@ async function handleMetaEvent(eventName: string, payload: unknown, env: Env): P
 	console.info(`[${owner}] Installation ${installationId} rejected - org not in ALLOWED_ORGS, uninstalling`);
 	try {
 		await deleteInstallation(env, installationId);
-		console.info(`[${owner}] Installation ${installationId} deleted`);
+		console.info(`[${owner}] Installation ${installationId} auto-deleted`);
 	} catch (error) {
 		console.error(`[${owner}] Failed to delete installation ${installationId}:`, error);
 	}
