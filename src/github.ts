@@ -541,14 +541,14 @@ export async function getWorkflowRunStatus(
 }
 
 // Delete a GitHub App installation. Used to reject installations from orgs not in ALLOWED_ORGS.
+// Requires app-level (JWT) authentication, not installation-level.
 export async function deleteInstallation(env: Env, installationId: number): Promise<void> {
 	const auth = createAppAuth({
 		appId: env.GITHUB_APP_ID,
 		privateKey: env.GITHUB_APP_PRIVATE_KEY,
-		installationId,
 	});
 
-	const { token } = await auth({ type: 'installation' });
+	const { token } = await auth({ type: 'app' });
 	const octokit = new ResilientOctokit({ auth: token });
 	await octokit.apps.deleteInstallation({ installation_id: installationId });
 }
