@@ -46,8 +46,8 @@ app.get('/health', (c) => c.text('OK'));
 
 // Public stats endpoint - shows events per repo as ASCII bar chart or JSON
 app.get('/stats', async (c) => {
-	const { ACCOUNT_ID, AE_API_TOKEN } = c.env;
-	if (!ACCOUNT_ID || !AE_API_TOKEN) {
+	const { CLOUDFLARE_ACCOUNT_ID, ANALYTICS_TOKEN } = c.env;
+	if (!CLOUDFLARE_ACCOUNT_ID || !ANALYTICS_TOKEN) {
 		return c.json({ error: 'Stats endpoint is not configured' }, 500);
 	}
 

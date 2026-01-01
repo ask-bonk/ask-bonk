@@ -45,15 +45,15 @@ interface EventsPerRepoRow {
 // Query Analytics Engine SQL API
 // https://developers.cloudflare.com/analytics/analytics-engine/worker-querying/
 export async function queryAnalyticsEngine(env: Env, query: string): Promise<Record<string, unknown>[]> {
-	const { ACCOUNT_ID, AE_API_TOKEN } = env;
-	if (!ACCOUNT_ID || !AE_API_TOKEN) {
-		throw new Error('Missing ACCOUNT_ID or AE_API_TOKEN');
+	const { CLOUDFLARE_ACCOUNT_ID, ANALYTICS_TOKEN } = env;
+	if (!CLOUDFLARE_ACCOUNT_ID || !ANALYTICS_TOKEN) {
+		throw new Error('Missing CLOUDFLARE_ACCOUNT_ID or ANALYTICS_TOKEN');
 	}
 
-	const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/analytics_engine/sql`, {
+	const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/analytics_engine/sql`, {
 		method: 'POST',
 		headers: {
-			Authorization: `Bearer ${AE_API_TOKEN}`,
+			Authorization: `Bearer ${ANALYTICS_TOKEN}`,
 			'Content-Type': 'text/plain',
 		},
 		body: query,
