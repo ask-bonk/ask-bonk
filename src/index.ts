@@ -18,7 +18,7 @@ import { handleGetInstallation, handleExchangeToken, handleExchangeTokenForRepo,
 import { RepoAgent } from './agent';
 import { runAsk } from './sandbox';
 import { getAgentByName } from 'agents';
-import { emitMetric } from './metrics';
+import { emitMetric, queryAnalyticsEngine, renderBarChart, eventsPerRepoQuery } from './metrics';
 
 export { Sandbox } from '@cloudflare/sandbox';
 export { RepoAgent };
@@ -43,6 +43,29 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.get('/', (c) => c.redirect(GITHUB_REPO_URL, 302));
 app.get('/health', (c) => c.text('OK'));
+
+// Public stats endpoint - shows events per repo as ASCII bar chart or JSON
+app.get('/stats', async (c) => {
+	const { CLOUDFLARE_ACCOUNT_ID, ANALYTICS_TOKEN } = c.env;
+	if (!CLOUDFLARE_ACCOUNT_ID || !ANALYTICS_TOKEN) {
+		return c.json({ error: 'Stats endpoint is not configured' }, 500);
+	}
+
+	try {
+		const data = await queryAnalyticsEngine(c.env, eventsPerRepoQuery);
+		const format = c.req.query('format');
+
+		if (format === 'json') {
+			return c.json({ data });
+		}
+
+		const chart = renderBarChart(data as { repo: string; event_type: string; event_count: number }[], 'Events per repo (last 30d)');
+		return c.text(chart);
+	} catch (error) {
+		console.error('[stats] Query failed:', error);
+		return c.json({ error: 'Failed to query stats' }, 500);
+	}
+});
 
 // Webhooks endpoint - receives GitHub events, logs them
 // Tracking is now handled by the GitHub Action calling /api/github/track

@@ -189,6 +189,28 @@ jobs:
             Run tests and type-check after updating.
 ```
 
+## `/stats` Endpoint
+
+A public endpoint that displays event metrics as an ASCII bar chart (or JSON).
+
+```bash
+# ASCII bar chart (default)
+curl https://ask-bonk.silverlock.workers.dev/stats
+
+# JSON format
+curl https://ask-bonk.silverlock.workers.dev/stats?format=json
+```
+
+**Example output:**
+```
+Events per repo (last 30d)
+──────────────────────────────────────────────────────────────
+ask-bonk/ask-bonk (webhook)   | ████████████████████████████████████████ | 150
+sst/ion (track)               | ████████████████████████                 | 89
+sst/ion (webhook)             | ████████████████████                     | 75
+ask-bonk/ask-bonk (finalize)  | ████████████                             | 45
+```
+
 ## `/ask` Sandbox Mode
 
 > :warning: **Experimental and work-in-progress.** Uses the [Cloudflare Sandbox SDK](https://sandbox.cloudflare.com/) to run off-GitHub tasks.
