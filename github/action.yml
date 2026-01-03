@@ -32,6 +32,11 @@ inputs:
     required: false
     default: "https://ask-bonk.silverlock.workers.dev/auth"
 
+  opencode_dev:
+    description: "Install OpenCode from dev branch instead of latest release"
+    required: false
+    default: "false"
+
 runs:
   using: "composite"
   steps:
@@ -200,9 +205,18 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
+        OPENCODE_DEV: ${{ inputs.opencode_dev }}
       run: |
-        VERSION=$(gh api repos/sst/opencode/releases/latest --jq '.tag_name' 2>/dev/null || echo "latest")
-        echo "version=${VERSION:-latest}" >> $GITHUB_OUTPUT
+        if [ "$OPENCODE_DEV" = "true" ]; then
+          # Get latest commit SHA from dev branch
+          VERSION=$(gh api repos/sst/opencode/commits/dev --jq '.sha' 2>/dev/null | head -c 7 || echo "dev")
+          echo "version=dev-${VERSION}" >> $GITHUB_OUTPUT
+          echo "dev=true" >> $GITHUB_OUTPUT
+        else
+          VERSION=$(gh api repos/sst/opencode/releases/latest --jq '.tag_name' 2>/dev/null || echo "latest")
+          echo "version=${VERSION:-latest}" >> $GITHUB_OUTPUT
+          echo "dev=false" >> $GITHUB_OUTPUT
+        fi
 
     - name: Cache opencode
       if: steps.mentions.outputs.skip != 'true' && steps.setup.outputs.skip != 'true'
@@ -215,7 +229,14 @@ runs:
     - name: Install opencode
       if: steps.mentions.outputs.skip != 'true' && steps.setup.outputs.skip != 'true' && steps.cache.outputs.cache-hit != 'true'
       shell: bash
-      run: curl -fsSL https://opencode.ai/install | bash
+      env:
+        OPENCODE_DEV: ${{ steps.version.outputs.dev }}
+      run: |
+        if [ "$OPENCODE_DEV" = "true" ]; then
+          curl -fsSL https://opencode.ai/install | bash -s -- --dev
+        else
+          curl -fsSL https://opencode.ai/install | bash
+        fi
 
     - name: Add opencode to PATH
       if: steps.mentions.outputs.skip != 'true' && steps.setup.outputs.skip != 'true'
