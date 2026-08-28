@@ -27,6 +27,10 @@ async function main() {
 
   const apiBase = getApiBaseUrl();
 
+  const headSha = process.env.HEAD_SHA?.trim() || undefined;
+  const prNumberRaw = process.env.PR_NUMBER?.trim();
+  const prNumber = prNumberRaw ? parseInt(prNumberRaw, 10) || undefined : undefined;
+
   try {
     const response = await fetchWithRetry(`${apiBase}/api/github/track`, {
       method: "PUT",
@@ -43,6 +47,8 @@ async function main() {
         // run was never tracked or was already removed from activeRuns.
         issue_number: context.issue?.number,
         run_url: context.runUrl,
+        // PR context for creating a Bonk review check run.
+        ...(headSha && prNumber ? { head_sha: headSha, pr_number: prNumber } : {}),
       }),
     });
 

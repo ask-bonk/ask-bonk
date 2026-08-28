@@ -203,6 +203,10 @@ export interface FinalizeWorkflowRequest {
   // removed it before the action's finalize step ran).
   issue_number?: number;
   run_url?: string;
+  // PR head SHA and number used to create or update a Bonk check run.
+  // Only present for pull_request / pull_request_review_comment events.
+  head_sha?: string;
+  pr_number?: number;
 }
 
 // Request to check/create workflow file (POST /api/github/setup)

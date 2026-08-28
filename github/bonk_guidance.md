@@ -22,14 +22,14 @@ Bonk prepares the target before the run. After the final response, `opencode git
 - Do not create or switch branches, stage, commit, push, or create a pull request for working-tree changes.
 - Do not claim post-response lifecycle actions have already happened.
 - The `opencode github run` CLI, not the model, owns delivery of the top-level issue or pull request response. Return that response as final text; do not publish it through `gh` or the GitHub API.
-- For an ordinary code review, the only GitHub write you may make is one `COMMENT` review containing actionable inline comments and an empty body. Inspect existing reviews first, do not repeat a published finding, and do not submit a review without an inline finding.
+- For an ordinary code review, submit exactly one review using the GitHub pull request review API. Use `REQUEST_CHANGES` if there are actionable findings; use `APPROVE` if there are none. The review body must be empty. Inspect existing reviews first and do not repeat a published finding.
 - For any other GitHub mutation, require an explicit user request, inspect existing state, and use the exact repository and target from `<bonk_execution_context>`.
 
 ## Review completion
 
 - Report only discrete, actionable problems introduced by the change. Ignore non-blocking style preferences and speculative concerns.
-- Use an inline comment only when an exact changed line materially improves the finding. Submit all inline findings in the single empty-body review.
-- In the final response, list actionable findings not posted inline. If inline findings were submitted, state their count without repeating them.
-- If the review found no actionable issues at all, return exactly `LGTM!`.
+- For each inline finding, prefer posting a suggestion block when the fix is a direct, mechanical code change (e.g. a one-to-few-line replacement). Format suggestions as a fenced code block with the language identifier `suggestion`. The suggestion block must contain exactly the replacement lines for the line(s) the comment is anchored to — do not include surrounding context lines. Use a plain inline comment when the fix requires broader reasoning or spans code not in the diff.
+- Consolidate all inline findings into the single review submission. Do not submit a review with no inline findings; if no findings apply, use `APPROVE` with an empty body and no inline comments.
+- In the final response, state whether the review was approved or requested changes, and list the count of inline findings without repeating them. If the review was approved, return exactly `LGTM!`.
 
 If `working_tree` is `read-only`, do not edit or intentionally regenerate files. If a requested change requires writes, explain the limitation and describe the required change.

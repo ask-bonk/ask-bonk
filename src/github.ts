@@ -740,6 +740,54 @@ export async function getWorkflowRunStatus(
   };
 }
 
+export type CheckRunConclusion = "success" | "failure" | "cancelled" | "skipped" | "neutral";
+
+// Creates or updates a Bonk review check run on the PR head SHA.
+// If an existing check run ID is provided, it updates that run; otherwise it creates a new one.
+// Returns the check run ID so callers can update it later.
+export async function upsertReviewCheckRun(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  headSha: string,
+  conclusion: CheckRunConclusion,
+  summary: string,
+  existingCheckRunId?: number,
+): Promise<number> {
+  const completedAt = new Date().toISOString();
+
+  if (existingCheckRunId) {
+    const response = await octokit.checks.update({
+      owner,
+      repo,
+      check_run_id: existingCheckRunId,
+      status: "completed",
+      conclusion,
+      completed_at: completedAt,
+      output: {
+        title: conclusion === "success" ? "Review passed" : "Review requested changes",
+        summary,
+      },
+    });
+    return response.data.id;
+  }
+
+  const response = await octokit.checks.create({
+    owner,
+    repo,
+    name: "Bonk Review",
+    head_sha: headSha,
+    status: "completed",
+    conclusion,
+    completed_at: completedAt,
+    output: {
+      title: conclusion === "success" ? "Review passed" : "Review requested changes",
+      summary,
+    },
+  });
+  return response.data.id;
+}
+
 // Delete a GitHub App installation. Used to reject installations from orgs not in ALLOWED_ORGS.
 // Requires app-level (JWT) authentication, not installation-level.
 export async function deleteInstallation(env: Env, installationId: number): Promise<void> {
