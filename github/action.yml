@@ -245,6 +245,9 @@ runs:
         # Pass issue/PR context so the server can post failure comments even
         # when the run was never tracked or was already removed from activeRuns.
         ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+        # PR context for creating a Bonk review check run.
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.pull_request && github.event.issue.number || '' }}
       run: bun run ${{ github.action_path }}/script/finalize.ts
 
     - name: Cleanup Git credentials

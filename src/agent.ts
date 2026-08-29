@@ -7,6 +7,8 @@ import {
   createReviewCommentReply,
   updateReviewComment,
   getWorkflowRunStatus,
+  upsertReviewCheckRun,
+  type CheckRunConclusion,
   type ReactionTarget,
 } from "./github";
 import { createLogger, sanitizeSecrets, type Logger } from "./log";
@@ -239,6 +241,8 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
     fallbackIssueNumber?: number,
     fallbackRunUrl?: string,
     actor?: string,
+    headSha?: string,
+    prNumber?: number,
   ): Promise<void> {
     const run = this.state.activeRuns[runId];
     const issueNumber = run?.issueNumber ?? fallbackIssueNumber;
@@ -262,15 +266,12 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
       log.warn("run_not_active_posting_failure", {
         recently_finalized: !!this.state.recentlyFinalizedRuns?.[runId],
       });
-      await this.postFailureComment(
-        runId,
-        fallbackRunUrl,
-        issueNumber,
-        status,
-        undefined,
-        undefined,
-        actor,
-      );
+      await Promise.all([
+        this.postFailureComment(runId, fallbackRunUrl, issueNumber, status, undefined, undefined, actor),
+        headSha && prNumber
+          ? this.postReviewCheckRun(headSha, prNumber, status, log)
+          : Promise.resolve(),
+      ]);
       return;
     }
 
@@ -278,6 +279,9 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
 
     if (status === "success") {
       log.info("run_completed_no_comment", { status });
+      if (headSha && prNumber) {
+        await this.postReviewCheckRun(headSha, prNumber, status, log);
+      }
       return;
     }
 
@@ -287,7 +291,44 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
     // failed and should be treated as a failure. The finalize script remaps
     // "skipped" -> "failure" client-side, but we also handle it here as
     // defense-in-depth.
-    await this.postFailureComment(runId, run.runUrl, run.issueNumber, status, run);
+    await Promise.all([
+      this.postFailureComment(runId, run.runUrl, run.issueNumber, status, run),
+      headSha && prNumber
+        ? this.postReviewCheckRun(headSha, prNumber, status, log)
+        : Promise.resolve(),
+    ]);
+  }
+
+  // Creates or updates the Bonk review check run on the PR head SHA.
+  // Best-effort: logs but does not throw on failure so it never blocks finalization.
+  private async postReviewCheckRun(
+    headSha: string,
+    prNumber: number,
+    status: string,
+    log: Logger,
+  ): Promise<void> {
+    // Map Bonk run status to a check run conclusion.
+    // success → success (approved), everything else → failure (requested changes or infra error).
+    const conclusion: CheckRunConclusion = status === "success" ? "success" : "failure";
+    const summary =
+      status === "success"
+        ? "Bonk reviewed this pull request and found no actionable issues."
+        : "Bonk reviewed this pull request and requested changes, or the run failed.";
+
+    let octokit: Octokit;
+    try {
+      octokit = await this.getOctokit();
+    } catch (error) {
+      log.errorWithException("check_run_octokit_failed", error, { pr_number: prNumber });
+      return;
+    }
+
+    try {
+      await upsertReviewCheckRun(octokit, this.owner, this.repo, headSha, conclusion, summary);
+      log.info("check_run_posted", { conclusion, pr_number: prNumber });
+    } catch (error) {
+      log.errorWithException("check_run_post_failed", error, { pr_number: prNumber });
+    }
   }
 
   async checkWorkflowStatus(payload: CheckStatusPayload): Promise<void> {
